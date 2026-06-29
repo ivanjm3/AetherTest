@@ -1,0 +1,42 @@
+{
+    "aut_metadata": {
+            "components": [
+                {
+                    "component_id": "product-listing",
+                    "name": "Product Listing",
+                    "component_type": "ui_page",
+                    "dependencies": [],
+                    "api_surface": ["/api/products", "/api/search"],
+                    "ui_entry_points": ["/products"],
+                    "metadata": {"criticality": "medium"}
+                },
+                {
+                    "component_id": "cart-service",
+                    "name": "Cart Service",
+                    "component_type": "api_endpoint",
+                    "dependencies": ["product-listing"],
+                    "api_surface": ["/api/cart/add", "/api/cart/remove", "/api/cart/total"],
+                    "ui_entry_points": ["/cart"],
+                    "metadata": {"criticality": "high"}
+                },
+                {
+                    "component_id": "checkout-flow",
+                    "name": "Checkout Flow",
+                    "component_type": "ui_page",
+                    "dependencies": ["cart-service", "payment-gateway"],
+                    "api_surface": ["/api/checkout/start", "/api/checkout/confirm"],
+                    "ui_entry_points": ["/checkout"],
+                    "metadata": {"criticality": "critical"}
+                },
+                {
+                    "component_id": "payment-gateway",
+                    "name": "Payment Gateway",
+                    "component_type": "service",
+                    "dependencies": [],
+                    "api_surface": ["/api/payments/charge", "/api/payments/verify"],
+                    "ui_entry_points": [],
+                    "metadata": {"criticality": "critical"}
+                }
+            ]
+    }
+}

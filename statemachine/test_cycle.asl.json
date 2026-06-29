@@ -1,0 +1,237 @@
+{
+  "Comment": "AetherTest Test Strategist Agent — Test Cycle State Machine",
+  "StartAt": "AnalyzeAUT",
+  "States": {
+    "AnalyzeAUT": {
+      "Type": "Task",
+      "Resource": "${AUTAnalyzerLambdaArn}",
+      "ResultPath": "$.aut_analysis",
+      "Retry": [
+        {
+          "ErrorEquals": ["Lambda.ServiceException", "Lambda.AWSLambdaException", "States.TaskFailed"],
+          "IntervalSeconds": 5,
+          "MaxAttempts": 3,
+          "BackoffRate": 2.0
+        }
+      ],
+      "Catch": [
+        {
+          "ErrorEquals": ["States.ALL"],
+          "Next": "PublishFailure",
+          "ResultPath": "$.error"
+        }
+      ],
+      "Next": "ComputeRiskScores"
+    },
+    "ComputeRiskScores": {
+      "Type": "Task",
+      "Resource": "${RiskScorerLambdaArn}",
+      "Parameters": {
+        "tenant_id.$": "$.tenant_id",
+        "graph.$": "$.aut_analysis.graph",
+        "change_set.$": "$.change_set"
+      },
+      "ResultPath": "$.risk_scoring",
+      "Retry": [
+        {
+          "ErrorEquals": ["Lambda.ServiceException", "Lambda.AWSLambdaException", "States.TaskFailed"],
+          "IntervalSeconds": 5,
+          "MaxAttempts": 3,
+          "BackoffRate": 2.0
+        }
+      ],
+      "Catch": [
+        {
+          "ErrorEquals": ["States.ALL"],
+          "Next": "PublishFailure",
+          "ResultPath": "$.error"
+        }
+      ],
+      "Next": "GenerateStrategy"
+    },
+    "GenerateStrategy": {
+      "Type": "Task",
+      "Resource": "${StrategyGeneratorLambdaArn}",
+      "Parameters": {
+        "tenant_id.$": "$.tenant_id",
+        "aut_id.$": "$.aut_id",
+        "aut_version.$": "$.aut_version",
+        "execution_environment.$": "$.execution_environment",
+        "triggering_event.$": "$.triggering_event",
+        "risk_scores.$": "$.risk_scoring.risk_scores"
+      },
+      "ResultPath": "$.strategy_result",
+      "Retry": [
+        {
+          "ErrorEquals": ["Lambda.ServiceException", "Lambda.AWSLambdaException", "States.TaskFailed"],
+          "IntervalSeconds": 5,
+          "MaxAttempts": 3,
+          "BackoffRate": 2.0
+        }
+      ],
+      "Catch": [
+        {
+          "ErrorEquals": ["States.ALL"],
+          "Next": "PublishFailure",
+          "ResultPath": "$.error"
+        }
+      ],
+      "Next": "DispatchAgents"
+    },
+    "DispatchAgents": {
+      "Type": "Task",
+      "Resource": "${AgentDispatcherLambdaArn}",
+      "Parameters": {
+        "tenant_id.$": "$.tenant_id",
+        "execution_id.$": "$.execution_id",
+        "strategy.$": "$.strategy_result.strategy"
+      },
+      "ResultPath": "$.dispatch_result",
+      "Retry": [
+        {
+          "ErrorEquals": ["Lambda.ServiceException", "Lambda.AWSLambdaException", "States.TaskFailed"],
+          "IntervalSeconds": 5,
+          "MaxAttempts": 3,
+          "BackoffRate": 2.0
+        }
+      ],
+      "Catch": [
+        {
+          "ErrorEquals": ["States.ALL"],
+          "Next": "PublishFailure",
+          "ResultPath": "$.error"
+        }
+      ],
+      "Next": "MonitorExecution"
+    },
+    "MonitorExecution": {
+      "Type": "Wait",
+      "Seconds": 30,
+      "Next": "CheckExecutionStatus"
+    },
+    "CheckExecutionStatus": {
+      "Type": "Choice",
+      "Choices": [
+        {
+          "Variable": "$.dispatch_result.execution_state.status",
+          "StringEquals": "completed",
+          "Next": "AggregateResults"
+        },
+        {
+          "Variable": "$.dispatch_result.execution_state.status",
+          "StringEquals": "failed",
+          "Next": "TriageFailures"
+        },
+        {
+          "Variable": "$.dispatch_result.execution_state.status",
+          "StringEquals": "self_healing",
+          "Next": "AnalyzeAUT"
+        }
+      ],
+      "Default": "MonitorExecution"
+    },
+    "TriageFailures": {
+      "Type": "Task",
+      "Resource": "${FailureTriageLambdaArn}",
+      "Parameters": {
+        "tenant_id.$": "$.tenant_id",
+        "execution_id.$": "$.execution_id",
+        "component_id.$": "$.failure_component_id",
+        "failure_evidence.$": "$.failure_evidence",
+        "risk_score_at_failure.$": "$.risk_score_at_failure"
+      },
+      "ResultPath": "$.triage_result",
+      "Retry": [
+        {
+          "ErrorEquals": ["Lambda.ServiceException", "Lambda.AWSLambdaException", "States.TaskFailed"],
+          "IntervalSeconds": 5,
+          "MaxAttempts": 3,
+          "BackoffRate": 2.0
+        }
+      ],
+      "Next": "CheckTriageResult"
+    },
+    "CheckTriageResult": {
+      "Type": "Choice",
+      "Choices": [
+        {
+          "Variable": "$.triage_result.trigger_self_heal",
+          "BooleanEquals": true,
+          "Next": "AnalyzeAUT"
+        }
+      ],
+      "Default": "AggregateResults"
+    },
+    "AggregateResults": {
+      "Type": "Task",
+      "Resource": "${ResultAggregatorLambdaArn}",
+      "Parameters": {
+        "tenant_id.$": "$.tenant_id",
+        "execution_id.$": "$.execution_id",
+        "strategy_id.$": "$.strategy_result.strategy_id"
+      },
+      "ResultPath": "$.aggregation_result",
+      "Retry": [
+        {
+          "ErrorEquals": ["Lambda.ServiceException", "Lambda.AWSLambdaException", "States.TaskFailed"],
+          "IntervalSeconds": 5,
+          "MaxAttempts": 3,
+          "BackoffRate": 2.0
+        }
+      ],
+      "Next": "UpdateLearning"
+    },
+    "UpdateLearning": {
+      "Type": "Task",
+      "Resource": "${LearningUpdaterLambdaArn}",
+      "Parameters": {
+        "tenant_id.$": "$.tenant_id",
+        "execution_state.$": "$.dispatch_result.execution_state"
+      },
+      "ResultPath": "$.learning_result",
+      "Retry": [
+        {
+          "ErrorEquals": ["Lambda.ServiceException", "Lambda.AWSLambdaException", "States.TaskFailed"],
+          "IntervalSeconds": 5,
+          "MaxAttempts": 3,
+          "BackoffRate": 2.0
+        }
+      ],
+      "Next": "PublishResults"
+    },
+    "PublishResults": {
+      "Type": "Task",
+      "Resource": "arn:aws:states:::events:putEvents",
+      "Parameters": {
+        "Entries": [
+          {
+            "Source": "aethertest.strategist",
+            "DetailType": "TestCycleCompleted",
+            "Detail": {
+              "tenant_id.$": "$.tenant_id",
+              "execution_id.$": "$.execution_id",
+              "status.$": "$.aggregation_result.status",
+              "deployment_approved.$": "$.aggregation_result.deployment_approved",
+              "defect_count.$": "$.aggregation_result.failed",
+              "summary_s3_key.$": "$.aggregation_result.summary_s3_key"
+            }
+          }
+        ]
+      },
+      "End": true
+    },
+    "PublishFailure": {
+      "Type": "Task",
+      "Resource": "arn:aws:states:::sns:publish",
+      "Parameters": {
+        "TopicArn": "${SNSAlertTopicArn}",
+        "Message": {
+          "execution_id.$": "$.execution_id",
+          "error.$": "$.error",
+          "tenant_id.$": "$.tenant_id"
+        }
+      },
+      "End": true
+    }
+  }
+}
