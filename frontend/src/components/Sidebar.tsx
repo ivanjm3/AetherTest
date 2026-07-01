@@ -23,7 +23,7 @@ export default function Sidebar() {
     >
       {/* Header */}
       <div className={`flex items-center gap-3 p-4 border-b border-white/10 ${collapsed ? 'justify-center' : ''}`}>
-        <span className="text-xl shrink-0">🧪</span>
+        <span className="text-xl shrink-0"> </span>
         {!collapsed && (
           <div className="min-w-0">
             <h1 className="text-sm font-bold text-text-inverse truncate">AetherTest</h1>

@@ -11,6 +11,7 @@ Setup:
 
 import json
 import os
+import re
 import sys
 import time
 import uuid
@@ -101,13 +102,36 @@ def invoke_claude(prompt: str, system_prompt: str = "", max_tokens: int = 4096) 
 
 
 def parse_json_response(text: str) -> dict:
-    """Extract JSON from Claude response (handles markdown code blocks)."""
+    """Extract JSON from Claude response (handles markdown code blocks and common issues)."""
     json_str = text
     if "```json" in json_str:
         json_str = json_str.split("```json")[1].split("```")[0]
     elif "```" in json_str:
         json_str = json_str.split("```")[1].split("```")[0]
-    return json.loads(json_str.strip())
+    json_str = json_str.strip()
+
+    # Try direct parse first
+    try:
+        return json.loads(json_str)
+    except json.JSONDecodeError:
+        pass
+
+    # Fix common Claude JSON issues: trailing commas before } or ]
+    fixed = re.sub(r',\s*([}\]])', r'\1', json_str)
+    try:
+        return json.loads(fixed)
+    except json.JSONDecodeError:
+        pass
+
+    # Last resort: try to find the outermost { }
+    start = json_str.find('{')
+    end = json_str.rfind('}')
+    if start != -1 and end != -1:
+        subset = json_str[start:end+1]
+        fixed_subset = re.sub(r',\s*([}\]])', r'\1', subset)
+        return json.loads(fixed_subset)
+
+    raise json.JSONDecodeError("Could not parse JSON from response", json_str, 0)
 
 
 # ─── Athena Query Execution ────────────────────────────────────────────────────
@@ -260,6 +284,19 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# ─── Static Frontend Serving (production container mode) ───────────────────────
+_STATIC_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "static")
+if os.path.isdir(_STATIC_DIR):
+    from fastapi.staticfiles import StaticFiles
+    from fastapi.responses import FileResponse
+
+    @app.get("/")
+    async def serve_root():
+        return FileResponse(os.path.join(_STATIC_DIR, "index.html"))
+
+    # Catch-all for SPA routes (must be registered AFTER /api routes)
+    # Registered at startup via event handler below
+
 
 # ─── Models ────────────────────────────────────────────────────────────────────
 
@@ -370,7 +407,7 @@ GENERATE_TESTS_SYSTEM = (
     '    }\n'
     '  ]\n'
     '}\n\n'
-    "Generate 8-12 test cases. ONLY use table and column names from the ACTUAL GLUE CATALOG provided.\n"
+    "Generate 8-12 test cases per pipeline/ARN provided. ONLY use table and column names from the ACTUAL GLUE CATALOG provided.\n"
     "IMPORTANT: Each test MUST include a user_story field in the format: "
     "'As a [role], I want to verify [what] so that [why]'"
 )
@@ -544,86 +581,92 @@ async def generate_tests(req: GenerateTestsRequest):
         except Exception as e:
             print(f"  ℹ️ No cache ({type(e).__name__}), generating fresh...")
 
-    deps_summary = "\n".join(
-        f"- [{d.get('type', 'unknown')}] {d.get('label', 'Unknown')}: {d.get('value', '')}"
-        for d in req.dependencies
-    )
+    # Group dependencies by source ARN/pipeline
+    pipelines: dict[str, list] = {}
+    for d in req.dependencies:
+        source = d.get("sourceArn", "default")
+        pipelines.setdefault(source, []).append(d)
 
-    # Enrich with actual Glue catalog metadata for accurate SQL
-    # Only include databases/tables that are relevant to this pipeline's dependencies
-    catalog_context = ""
-    try:
-        glue = get_glue_client()
+    all_test_cases = []
 
-        # Extract database and table hints from dependencies
-        dep_values = [d.get("value", "").lower() for d in req.dependencies]
-        dep_labels = [d.get("label", "").lower() for d in req.dependencies]
-        all_dep_text = " ".join(dep_values + dep_labels)
+    # Generate tests per pipeline separately to ensure coverage for each
+    for pipeline_source, pipeline_deps in pipelines.items():
+        deps_summary = "\n".join(
+            f"- [{d.get('type', 'unknown')}] {d.get('label', 'Unknown')}: {d.get('value', '')}"
+            for d in pipeline_deps
+        )
 
-        db_response = glue.get_databases()
-        catalog_lines = []
-        for db in db_response.get("DatabaseList", []):
-            db_name = db["Name"]
-            # Include this database if it's mentioned in dependencies OR if any dep table is in it
-            tables_resp = glue.get_tables(DatabaseName=db_name, MaxResults=50)
-            table_list = tables_resp.get("TableList", [])
+        # Enrich with actual Glue catalog metadata for accurate SQL
+        # Only include databases/tables relevant to THIS pipeline's deps
+        catalog_context = ""
+        try:
+            glue = get_glue_client()
 
-            # Check if this database or any of its tables is referenced in dependencies
-            db_relevant = db_name.lower() in all_dep_text
-            relevant_tables = []
-            for tbl in table_list:
-                tbl_name = tbl["Name"].lower()
-                if db_relevant or tbl_name in all_dep_text or any(tbl_name in dv for dv in dep_values):
-                    relevant_tables.append(tbl)
+            dep_values = [d.get("value", "").lower() for d in pipeline_deps]
+            dep_labels = [d.get("label", "").lower() for d in pipeline_deps]
+            all_dep_text = " ".join(dep_values + dep_labels)
 
-            # If no specific match, but this is the only non-default DB, include it
-            if not relevant_tables and db_relevant:
-                relevant_tables = table_list
-
-            for tbl in relevant_tables:
-                params = tbl.get("Parameters", {})
-                cols = [f"{c['Name']}:{c['Type']}" for c in tbl.get("StorageDescriptor", {}).get("Columns", [])]
-                is_iceberg = params.get("table_type", "").lower() == "iceberg"
-                iceberg_tag = " [ICEBERG]" if is_iceberg else ""
-                catalog_lines.append(
-                    f"  {db_name}.{tbl['Name']}{iceberg_tag} — {', '.join(cols)}"
-                )
-
-        if catalog_lines:
-            catalog_context = (
-                "\n\nACTUAL GLUE CATALOG (ONLY use these table and column names in SQL — "
-                "do NOT invent any others. Note the types after colon — use CAST when comparing different types):\n"
-                + "\n".join(catalog_lines)
-            )
-        else:
-            # Fallback: include all databases if nothing matched
-            catalog_lines_all = []
+            db_response = glue.get_databases()
+            catalog_lines = []
             for db in db_response.get("DatabaseList", []):
                 db_name = db["Name"]
                 tables_resp = glue.get_tables(DatabaseName=db_name, MaxResults=50)
-                for tbl in tables_resp.get("TableList", []):
+                table_list = tables_resp.get("TableList", [])
+
+                db_relevant = db_name.lower() in all_dep_text
+                relevant_tables = []
+                for tbl in table_list:
+                    tbl_name = tbl["Name"].lower()
+                    if db_relevant or tbl_name in all_dep_text or any(tbl_name in dv for dv in dep_values):
+                        relevant_tables.append(tbl)
+
+                if not relevant_tables and db_relevant:
+                    relevant_tables = table_list
+
+                for tbl in relevant_tables:
                     params = tbl.get("Parameters", {})
                     cols = [f"{c['Name']}:{c['Type']}" for c in tbl.get("StorageDescriptor", {}).get("Columns", [])]
                     is_iceberg = params.get("table_type", "").lower() == "iceberg"
                     iceberg_tag = " [ICEBERG]" if is_iceberg else ""
-                    catalog_lines_all.append(
+                    catalog_lines.append(
                         f"  {db_name}.{tbl['Name']}{iceberg_tag} — {', '.join(cols)}"
                     )
-            if catalog_lines_all:
+
+            if catalog_lines:
                 catalog_context = (
                     "\n\nACTUAL GLUE CATALOG (ONLY use these table and column names in SQL — "
-                    "do NOT invent any others. Note the types after colon — use CAST when comparing different types):\n"
-                    + "\n".join(catalog_lines_all)
+                    "do NOT invent any others. Note types after colon — use CAST when comparing different types):\n"
+                    + "\n".join(catalog_lines)
                 )
-    except Exception:
-        pass  # If catalog fetch fails, proceed without — Claude will use dependency values
+            else:
+                # Fallback: show all databases
+                catalog_lines_all = []
+                for db in db_response.get("DatabaseList", []):
+                    db_name = db["Name"]
+                    tables_resp = glue.get_tables(DatabaseName=db_name, MaxResults=50)
+                    for tbl in tables_resp.get("TableList", []):
+                        params = tbl.get("Parameters", {})
+                        cols = [f"{c['Name']}:{c['Type']}" for c in tbl.get("StorageDescriptor", {}).get("Columns", [])]
+                        is_iceberg = params.get("table_type", "").lower() == "iceberg"
+                        iceberg_tag = " [ICEBERG]" if is_iceberg else ""
+                        catalog_lines_all.append(
+                            f"  {db_name}.{tbl['Name']}{iceberg_tag} — {', '.join(cols)}"
+                        )
+                if catalog_lines_all:
+                    catalog_context = (
+                        "\n\nACTUAL GLUE CATALOG (ONLY use these table and column names in SQL):\n"
+                        + "\n".join(catalog_lines_all)
+                    )
+        except Exception:
+            pass
 
-    prompt = f"""Generate Athena-compatible data flow test cases for this pipeline:
+        pipeline_label = pipeline_source[:80] if pipeline_source != "default" else req.job_config.path[:80]
+        prompt = f"""Generate Athena-compatible data flow test cases for this specific pipeline:
 
+Pipeline: {pipeline_label}
 Job Type: {req.job_config.type}
-Job Path: {req.job_config.path}
 
-Dependencies:
+Dependencies for this pipeline:
 {deps_summary}
 {catalog_context}
 
@@ -634,56 +677,54 @@ RULES:
 4. For Iceberg metadata: SELECT * FROM "database"."table_name$snapshots" (with double quotes).
 5. All SQL must be Athena V3/Trino compatible.
 6. Each test MUST include a user_story.
-7. Focus tests on tables and databases that are actually referenced in the Dependencies above. Do NOT test unrelated tables."""
+7. Focus tests ONLY on tables referenced in the Dependencies above."""
 
-    try:
-        response_text = invoke_claude(prompt, system_prompt=GENERATE_TESTS_SYSTEM)
-        result = parse_json_response(response_text)
-
-        # Inject the target database into test metadata for run-time use
-        target_db = ATHENA_DATABASE
-        # Try to detect database from dependencies (database.table format)
-        for d in req.dependencies:
-            val = d.get("value", "")
-            if "." in val and not val.startswith("s3://") and not val.startswith("arn:"):
-                target_db = val.split(".")[0]
-                break
-
-        # Also try to detect from the generated SQL itself (first FROM clause)
-        for tc in result.get("test_cases", []):
-            sql = tc.get("sql", "")
-            # Look for FROM database.table pattern in the SQL
-            import re
-            from_match = re.search(r'\bFROM\s+(\w+)\.(\w+)', sql, re.IGNORECASE)
-            if from_match:
-                detected_db = from_match.group(1)
-                # Verify it's an actual Glue database (not a keyword)
-                if detected_db.lower() not in ('select', 'where', 'and', 'or', 'information_schema'):
-                    target_db = detected_db
-                    break
-
-        for tc in result.get("test_cases", []):
-            tc["target_database"] = target_db
-
-        # Cache in S3
         try:
-            session = get_boto_session()
-            s3 = session.client("s3", verify=False)
-            s3.put_object(
-                Bucket=ATHENA_OUTPUT_BUCKET,
-                Key=s3_key,
-                Body=json.dumps(result).encode("utf-8"),
-                ContentType="application/json",
-            )
-            print(f"  ✅ Cached tests to s3://{ATHENA_OUTPUT_BUCKET}/{s3_key}")
-        except Exception as cache_err:
-            print(f"  ⚠️ Failed to cache tests in S3: {cache_err}")
+            print(f"  🔄 Generating tests for: {pipeline_label[:50]}...")
+            response_text = invoke_claude(prompt, system_prompt=GENERATE_TESTS_SYSTEM)
+            pipeline_result = parse_json_response(response_text)
+            pipeline_tests = pipeline_result.get("test_cases", [])
 
-        return result
-    except json.JSONDecodeError as e:
-        raise HTTPException(status_code=500, detail=f"Agent returned invalid JSON: {e}")
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Test generation failed: {e}")
+            # Tag each test with its pipeline source and ensure unique IDs
+            for i, tc in enumerate(pipeline_tests):
+                tc["pipeline_source"] = pipeline_label
+                # Ensure unique ID across pipelines by prefixing with pipeline index
+                original_id = tc.get("id", f"TC-{uuid.uuid4().hex[:6].upper()}")
+                tc["id"] = f"{original_id}-P{list(pipelines.keys()).index(pipeline_source)+1}"
+
+            all_test_cases.extend(pipeline_tests)
+            print(f"  ✅ Generated {len(pipeline_tests)} tests for {pipeline_label[:50]}")
+        except Exception as e:
+            print(f"  ⚠️ Failed to generate tests for {pipeline_label[:50]}: {e}")
+
+    result = {"test_cases": all_test_cases}
+
+    # Inject the target database into test metadata for run-time use
+    for tc in result.get("test_cases", []):
+        target_db = "default"
+        sql = tc.get("sql", "")
+        from_match = re.search(r'\bFROM\s+["\']?(\w+)["\']?\.["\']?(\w+)', sql, re.IGNORECASE)
+        if from_match:
+            detected_db = from_match.group(1)
+            if detected_db.lower() not in ('select', 'where', 'and', 'or', 'information_schema'):
+                target_db = detected_db
+        tc["target_database"] = target_db
+
+    # Cache in S3
+    try:
+        session = get_boto_session()
+        s3 = session.client("s3", verify=False)
+        s3.put_object(
+            Bucket=ATHENA_OUTPUT_BUCKET,
+            Key=s3_key,
+            Body=json.dumps(result).encode("utf-8"),
+            ContentType="application/json",
+        )
+        print(f"  ✅ Cached {len(all_test_cases)} tests to s3://{ATHENA_OUTPUT_BUCKET}/{s3_key}")
+    except Exception as cache_err:
+        print(f"  ⚠️ Failed to cache tests in S3: {cache_err}")
+
+    return result
 
 
 @app.post("/api/run-tests")
@@ -1006,6 +1047,19 @@ async def analyze_failures(req: AnalyzeFailuresRequest):
 
 
 # ─── Startup ──────────────────────────────────────────────────────────────────
+
+# ─── SPA catch-all + static mount (after all /api routes) ─────────────────────
+if os.path.isdir(_STATIC_DIR):
+    from starlette.responses import FileResponse as _FR
+
+    @app.get("/{full_path:path}")
+    async def serve_spa(full_path: str):
+        # Try static file first, fallback to index.html (SPA)
+        file_path = os.path.join(_STATIC_DIR, full_path)
+        if os.path.isfile(file_path):
+            return _FR(file_path)
+        return _FR(os.path.join(_STATIC_DIR, "index.html"))
+
 
 if __name__ == "__main__":
     import uvicorn

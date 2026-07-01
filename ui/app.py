@@ -33,14 +33,14 @@ ASSIGNMENTS_TABLE = "aethertest-agent-assignments"
 
 st.set_page_config(
     page_title="AetherTest Platform",
-    page_icon="🧪",
+    page_icon=" ",
     layout="wide",
     initial_sidebar_state="expanded",
 )
 
 # ── Sidebar Navigation ────────────────────────────────────────────────────────
 
-st.sidebar.title("🧪 AetherTest")
+st.sidebar.title("  AetherTest")
 st.sidebar.markdown("**Multi-Agent AI Testing Platform**")
 st.sidebar.markdown("---")
 
@@ -604,7 +604,7 @@ elif page == "🤖 Agent Activity":
                     with st.expander(f"🧠 Strategy Generator — {item.get('created_at', 'N/A')}"):
                         st.json(item)
                 elif "TEST_SUITE" in sk:
-                    with st.expander(f"🧪 Test Case Generator — {item.get('generated_at', 'N/A')}"):
+                    with st.expander(f"  Test Case Generator — {item.get('generated_at', 'N/A')}"):
                         st.json(item)
                 else:
                     with st.expander(f"🤖 {agent} — {sk}"):

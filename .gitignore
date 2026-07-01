@@ -46,3 +46,6 @@ Thumbs.db
 
 pipeline_results*
 .kiro/
+
+# Deploy temp
+/tmp/aethertest-*.zip

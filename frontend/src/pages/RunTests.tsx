@@ -123,7 +123,7 @@ export default function RunTests() {
 
       const detectedType = detectType(input)
       setJobConfig({ type: detectedType, path: input })
-      setDependencies(uniqueDeps.map((d) => ({ ...d, selected: true })))
+      setDependencies(uniqueDeps.map((d) => ({ ...d, selected: false })))
       setTestCases([])
       setCurrentStep(2)
       addLog('success', `Analyzed: "${jobName}" — ${uniqueDeps.length} unique dependencies found`)
@@ -333,7 +333,7 @@ export default function RunTests() {
               className="w-full py-2.5 rounded-md bg-accent-teal text-white text-sm font-medium
                 hover:opacity-90 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
             >
-              {isGeneratingTests ? '⏳ Generating Test Cases...' : '🧪 Display Test Cases'}
+              {isGeneratingTests ? '⏳ Generating Test Cases...' : '  Display Test Cases'}
             </button>
           )}
 

@@ -1,0 +1,21 @@
+version: 0.2
+
+phases:
+  pre_build:
+    commands:
+      - echo Logging into ECR...
+      - aws ecr get-login-password --region $AWS_DEFAULT_REGION | docker login --username AWS --password-stdin $AWS_ACCOUNT_ID.dkr.ecr.$AWS_DEFAULT_REGION.amazonaws.com
+      - REPO_URI=$AWS_ACCOUNT_ID.dkr.ecr.$AWS_DEFAULT_REGION.amazonaws.com/$ECR_REPO_NAME
+      - COMMIT_HASH=$(echo $CODEBUILD_RESOLVED_SOURCE_VERSION | cut -c 1-7)
+      - if [ -z "$COMMIT_HASH" ]; then COMMIT_HASH=latest; fi
+      - IMAGE_TAG=$COMMIT_HASH
+  build:
+    commands:
+      - echo Building Docker image...
+      - docker build -t $REPO_URI:latest -t $REPO_URI:$IMAGE_TAG .
+  post_build:
+    commands:
+      - echo Pushing to ECR...
+      - docker push $REPO_URI:latest
+      - docker push $REPO_URI:$IMAGE_TAG
+      - echo Image pushed successfully

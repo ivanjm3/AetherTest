@@ -1,6 +1,7 @@
 import { useAppStore } from '@/store/appStore'
 import type { ExecutionRun } from '@/types'
 import { useState } from 'react'
+import { exportRunAsCSV, exportRunAsJSON } from '@/utils/exportResults'
 
 const statusIcons = {
   passed: '✅',
@@ -242,6 +243,27 @@ export default function ResultsTable() {
                       <p className="text-xs text-text-muted">Issues</p>
                     </div>
                   </div>
+                </div>
+
+                {/* Export buttons */}
+                <div className="border-t border-border-default px-4 py-3 bg-bg-secondary flex items-center gap-2">
+                  <span className="text-xs text-text-muted mr-2">Export this run:</span>
+                  <button
+                    onClick={(e) => { e.stopPropagation(); exportRunAsCSV(run) }}
+                    className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-md
+                      border border-border-default bg-bg-secondary text-text-secondary
+                      hover:bg-bg-input hover:text-text-primary transition-colors"
+                  >
+                    📄 CSV
+                  </button>
+                  <button
+                    onClick={(e) => { e.stopPropagation(); exportRunAsJSON(run) }}
+                    className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-md
+                      border border-border-default bg-bg-secondary text-text-secondary
+                      hover:bg-bg-input hover:text-text-primary transition-colors"
+                  >
+                    📋 JSON
+                  </button>
                 </div>
               </div>
             )}

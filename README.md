@@ -657,4 +657,4 @@ Built with:
 
 ---
 
-**AetherTest** — Intelligent testing, powered by AI 🧪
+**AetherTest** — Intelligent testing, powered by AI  

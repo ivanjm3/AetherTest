@@ -29,7 +29,7 @@ export default function Sidebar() {
     <aside className="w-64 flex-shrink-0 bg-white dark:bg-gray-800 border-r border-gray-200 dark:border-gray-700 flex flex-col h-full">
       {/* Header */}
       <div className="p-4 border-b border-gray-200 dark:border-gray-700">
-        <h1 className="text-xl font-bold">🧪 AetherTest</h1>
+        <h1 className="text-xl font-bold">  AetherTest</h1>
         <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">
           Multi-Agent AI Testing Platform
         </p>

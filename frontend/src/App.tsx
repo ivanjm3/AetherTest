@@ -1,3 +1,4 @@
+import { useEffect } from 'react'
 import { useAppStore } from '@/store/appStore'
 import Sidebar from '@/components/Sidebar'
 import LogPanel from '@/components/LogPanel'
@@ -7,6 +8,17 @@ import TestResultsPage from '@/pages/TestResultsPage'
 
 export default function App() {
   const activeTab = useAppStore((s) => s.activeTab)
+  const isLoadingJob = useAppStore((s) => s.isLoadingJob)
+  const isGeneratingTests = useAppStore((s) => s.isGeneratingTests)
+  const isRunningTests = useAppStore((s) => s.isRunningTests)
+  const isQuerying = useAppStore((s) => s.isQuerying)
+
+  const isProcessing = isLoadingJob || isGeneratingTests || isRunningTests || isQuerying
+
+  useEffect(() => {
+    document.body.classList.toggle('cursor-loading', isProcessing)
+    return () => { document.body.classList.remove('cursor-loading') }
+  }, [isProcessing])
 
   return (
     <div className="flex h-screen w-screen overflow-hidden bg-bg-primary">

@@ -74,3 +74,8 @@ body {
 .animate-slide-up {
   animation: slideUp 0.25s ease-out;
 }
+
+body.cursor-loading,
+body.cursor-loading * {
+  cursor: wait !important;
+}
