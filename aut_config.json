@@ -1,42 +1,45 @@
 {
+    "tenant_id": "demo-tenant",
+    "aut_id": "kpi-data-pipeline",
+    "aut_version": "1.0.0",
     "aut_metadata": {
-            "components": [
-                {
-                    "component_id": "product-listing",
-                    "name": "Product Listing",
-                    "component_type": "ui_page",
-                    "dependencies": [],
-                    "api_surface": ["/api/products", "/api/search"],
-                    "ui_entry_points": ["/products"],
-                    "metadata": {"criticality": "medium"}
-                },
-                {
-                    "component_id": "cart-service",
-                    "name": "Cart Service",
-                    "component_type": "api_endpoint",
-                    "dependencies": ["product-listing"],
-                    "api_surface": ["/api/cart/add", "/api/cart/remove", "/api/cart/total"],
-                    "ui_entry_points": ["/cart"],
-                    "metadata": {"criticality": "high"}
-                },
-                {
-                    "component_id": "checkout-flow",
-                    "name": "Checkout Flow",
-                    "component_type": "ui_page",
-                    "dependencies": ["cart-service", "payment-gateway"],
-                    "api_surface": ["/api/checkout/start", "/api/checkout/confirm"],
-                    "ui_entry_points": ["/checkout"],
-                    "metadata": {"criticality": "critical"}
-                },
-                {
-                    "component_id": "payment-gateway",
-                    "name": "Payment Gateway",
-                    "component_type": "service",
-                    "dependencies": [],
-                    "api_surface": ["/api/payments/charge", "/api/payments/verify"],
-                    "ui_entry_points": [],
-                    "metadata": {"criticality": "critical"}
-                }
-            ]
+        "components": [
+            {
+                "component_id": "kpi-data-pipeline-sfn",
+                "name": "KPI Data Pipeline (Step Functions)",
+                "component_type": "state_machine",
+                "dependencies": ["glue-etl", "iceberg-target"],
+                "api_surface": ["arn:aws:states:us-east-1:654654478821:stateMachine:KPI-Data-Pipeline"],
+                "ui_entry_points": [],
+                "metadata": {"criticality": "critical", "arn": "arn:aws:states:us-east-1:654654478821:stateMachine:KPI-Data-Pipeline"}
+            },
+            {
+                "component_id": "glue-etl",
+                "name": "Glue ETL Jobs",
+                "component_type": "service",
+                "dependencies": ["s3-source"],
+                "api_surface": [],
+                "ui_entry_points": [],
+                "metadata": {"criticality": "high", "region": "us-east-1"}
+            },
+            {
+                "component_id": "iceberg-target",
+                "name": "Iceberg Target Tables (Athena)",
+                "component_type": "data_store",
+                "dependencies": [],
+                "api_surface": [],
+                "ui_entry_points": [],
+                "metadata": {"criticality": "critical", "database": "icebergtarget", "table_format": "iceberg"}
+            },
+            {
+                "component_id": "s3-source",
+                "name": "S3 Source Data",
+                "component_type": "data_store",
+                "dependencies": [],
+                "api_surface": [],
+                "ui_entry_points": [],
+                "metadata": {"criticality": "high"}
+            }
+        ]
     }
 }

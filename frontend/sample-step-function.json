@@ -1,0 +1,76 @@
+{
+  "Comment": "Product Catalog ETL Pipeline - S3 CSV → Glue Crawler → Athena Table",
+  "StartAt": "TriggerGlueCrawler",
+  "States": {
+    "TriggerGlueCrawler": {
+      "Type": "Task",
+      "Resource": "arn:aws:states:::aws-sdk:glue:startCrawler",
+      "Parameters": {
+        "Name": "product-catalog-crawler"
+      },
+      "ResultPath": "$.crawlerResult",
+      "Next": "WaitForCrawler",
+      "Comment": "Crawl S3 source: s3://visualization-poc-bucket/data-sources/product_catalog.csv"
+    },
+    "WaitForCrawler": {
+      "Type": "Wait",
+      "Seconds": 30,
+      "Next": "CheckCrawlerStatus"
+    },
+    "CheckCrawlerStatus": {
+      "Type": "Task",
+      "Resource": "arn:aws:states:::aws-sdk:glue:getCrawler",
+      "Parameters": {
+        "Name": "product-catalog-crawler"
+      },
+      "ResultPath": "$.crawlerStatus",
+      "Next": "IsCrawlerDone"
+    },
+    "IsCrawlerDone": {
+      "Type": "Choice",
+      "Choices": [
+        {
+          "Variable": "$.crawlerStatus.Crawler.State",
+          "StringEquals": "READY",
+          "Next": "RunETLQuery"
+        }
+      ],
+      "Default": "WaitForCrawler"
+    },
+    "RunETLQuery": {
+      "Type": "Task",
+      "Resource": "arn:aws:states:::athena:startQueryExecution.sync",
+      "Parameters": {
+        "QueryString": "CREATE TABLE IF NOT EXISTS product_catalog_clean AS SELECT DISTINCT product_id, product_name, CAST(price AS DECIMAL(10,2)) AS price, category, CAST(stock_quantity AS INT) AS stock_quantity, CURRENT_DATE AS load_date FROM product_catalog_raw WHERE product_id IS NOT NULL AND price > 0",
+        "WorkGroup": "primary",
+        "QueryExecutionContext": {
+          "Database": "product_catalog_db"
+        },
+        "ResultConfiguration": {
+          "OutputLocation": "s3://visualization-poc-bucket/athena-results/"
+        }
+      },
+      "ResultPath": "$.queryResult",
+      "Next": "RunValidation"
+    },
+    "RunValidation": {
+      "Type": "Task",
+      "Resource": "arn:aws:states:::athena:startQueryExecution.sync",
+      "Parameters": {
+        "QueryString": "SELECT COUNT(*) as row_count, COUNT(DISTINCT product_id) as unique_products, AVG(price) as avg_price FROM product_catalog_clean",
+        "WorkGroup": "primary",
+        "QueryExecutionContext": {
+          "Database": "product_catalog_db"
+        },
+        "ResultConfiguration": {
+          "OutputLocation": "s3://visualization-poc-bucket/athena-results/"
+        }
+      },
+      "ResultPath": "$.validationResult",
+      "Next": "PipelineComplete"
+    },
+    "PipelineComplete": {
+      "Type": "Succeed"
+    }
+  }
+}
