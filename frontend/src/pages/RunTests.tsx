@@ -1,5 +1,6 @@
 import { useState, useRef } from 'react'
 import { useAppStore } from '@/store/appStore'
+import { useSessionStore } from '@/store/sessionStore'
 import { analyzeJob, generateTests, runTests, analyzeFailures } from '@/api/pipelineApi'
 import StepIndicator from '@/components/StepIndicator'
 import DependencyForm from '@/components/DependencyForm'
@@ -78,6 +79,9 @@ export default function RunTests() {
     const input = fileContent || jobPath.trim()
     if (!input) return
 
+    // Auto-create session if none active
+    useSessionStore.getState().ensureSession()
+
     setIsLoadingJob(true)
     addLog('info', 'Analyzing input...')
 
@@ -127,6 +131,12 @@ export default function RunTests() {
       setTestCases([])
       setCurrentStep(2)
       addLog('success', `Analyzed: "${jobName}" — ${uniqueDeps.length} unique dependencies found`)
+
+      // Auto-rename session to job name for easy identification
+      const sessionStore = useSessionStore.getState()
+      if (sessionStore.activeSessionId && jobName) {
+        sessionStore.renameSession(sessionStore.activeSessionId, jobName.slice(0, 50))
+      }
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err)
       addLog('error', msg)

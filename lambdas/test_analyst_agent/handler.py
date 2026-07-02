@@ -15,19 +15,44 @@ import uuid
 import boto3
 from datetime import datetime, timezone
 
-os.environ.setdefault("AWS_PROFILE", "kiro-dev")
 os.environ.setdefault("AWS_DEFAULT_REGION", "us-east-1")
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "../../layers"))
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "../../"))
 
-s3 = boto3.client("s3", region_name=os.environ.get("AWS_DEFAULT_REGION", "us-east-1"), verify=not os.environ.get("AETHERTEST_NO_SSL_VERIFY", ""), endpoint_url=os.environ.get("S3_ENDPOINT_URL", "https://s3.us-east-1.amazonaws.com"))
-dynamodb = boto3.resource("dynamodb", region_name=os.environ.get("AWS_DEFAULT_REGION", "us-east-1"), verify=not os.environ.get("AETHERTEST_NO_SSL_VERIFY", ""))
-
 BUCKET_NAME = os.environ.get("AETHERTEST_BUCKET", "aethertest-artifacts-654654478821")
 ASSIGNMENTS_TABLE = os.environ.get("ASSIGNMENTS_TABLE", "aethertest-agent-assignments")
 DEFECT_PATTERNS_TABLE = os.environ.get("DEFECT_PATTERNS_TABLE", "aethertest-defect-patterns")
 MODEL_ID = os.environ.get("BEDROCK_MODEL_ID", "us.anthropic.claude-sonnet-4-20250514-v1:0")
+
+# Lazy-initialized clients â€” created on first use, not at import time.
+# This avoids boto3 session creation during import (which fails in containers
+# if AWS_PROFILE env var points to a non-existent SSO profile).
+_s3 = None
+_dynamodb = None
+
+
+def _get_s3():
+    global _s3
+    if _s3 is None:
+        _s3 = boto3.client(
+            "s3",
+            region_name=os.environ.get("AWS_DEFAULT_REGION", "us-east-1"),
+            verify=not os.environ.get("AETHERTEST_NO_SSL_VERIFY", ""),
+            endpoint_url=os.environ.get("S3_ENDPOINT_URL", "https://s3.us-east-1.amazonaws.com"),
+        )
+    return _s3
+
+
+def _get_dynamodb():
+    global _dynamodb
+    if _dynamodb is None:
+        _dynamodb = boto3.resource(
+            "dynamodb",
+            region_name=os.environ.get("AWS_DEFAULT_REGION", "us-east-1"),
+            verify=not os.environ.get("AETHERTEST_NO_SSL_VERIFY", ""),
+        )
+    return _dynamodb
 
 ANALYST_SYSTEM_PROMPT = """You are an expert test failure analyst for the AetherTest platform.
 Analyze test failures and provide deep root cause analysis.
@@ -99,7 +124,7 @@ def handler(event: dict, context) -> dict:
     for failure in failed_tests:
         test_id = failure.get("test_id", str(uuid.uuid4()))
         test_name = failure.get("test_name", "Unknown test")
-        print(f"  → Analyzing: {test_name[:60]}...")
+        print(f"  Ã¢â€ â€™ Analyzing: {test_name[:60]}...")
 
         analysis = _analyze_failure(
             failure=failure,
@@ -111,7 +136,7 @@ def handler(event: dict, context) -> dict:
         classification = analysis.get("classification", "unknown")
         confidence = analysis.get("confidence", 0)
         fp = " [FALSE POSITIVE]" if analysis.get("is_false_positive") else ""
-        print(f"    → {classification} (confidence: {confidence:.0%}){fp}")
+        print(f"    Ã¢â€ â€™ {classification} (confidence: {confidence:.0%}){fp}")
 
     # Aggregate summary
     real_defects = [a for a in analyses if not a.get("is_false_positive") and a.get("classification") == "application_defect"]
@@ -141,7 +166,7 @@ def handler(event: dict, context) -> dict:
         "recent_changes_considered": recent_changes,
     }
 
-    s3.put_object(
+    _get_s3().put_object(
         Bucket=BUCKET_NAME,
         Key=s3_key,
         Body=json.dumps(report, indent=2),
@@ -245,7 +270,7 @@ Provide a thorough root cause analysis. Return ONLY a valid JSON object."""
 
 def _store_defect_patterns(tenant_id: str, execution_id: str, analyses: list):
     """Store real defect patterns in DynamoDB for learning."""
-    table = dynamodb.Table(DEFECT_PATTERNS_TABLE)
+    table = _get_dynamodb().Table(DEFECT_PATTERNS_TABLE)
     import time
 
     for analysis in analyses:

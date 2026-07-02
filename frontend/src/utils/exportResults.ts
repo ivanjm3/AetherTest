@@ -22,7 +22,7 @@ export function exportRunAsCSV(run: ExecutionRun) {
   const headers = ['test_id', 'test_name', 'description', 'status', 'actual', 'expected', 'duration_ms', 'error_message']
   const rows = run.results.map((r) =>
     headers.map((h) => {
-      const val = String((r as Record<string, unknown>)[h] ?? '')
+      const val = String((r as unknown as Record<string, unknown>)[h] ?? '')
       // Escape CSV: wrap in quotes if contains comma/newline/quote
       if (val.includes(',') || val.includes('\n') || val.includes('"')) {
         return `"${val.replace(/"/g, '""')}"`

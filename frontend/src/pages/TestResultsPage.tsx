@@ -1,6 +1,6 @@
 import { useAppStore } from '@/store/appStore'
 import ResultsTable from '@/components/ResultsTable'
-import { exportRunAsCSV, exportRunAsJSON, exportAllRunsAsJSON } from '@/utils/exportResults'
+import { exportRunAsCSV, exportAllRunsAsJSON } from '@/utils/exportResults'
 
 export default function TestResultsPage() {
   const executionHistory = useAppStore((s) => s.executionHistory)
@@ -24,9 +24,9 @@ export default function TestResultsPage() {
             >
               📥 Export All (JSON)
             </button>
-            {executionHistory.length === 1 && (
+            {executionHistory.length === 1 && executionHistory[0] && (
               <button
-                onClick={() => exportRunAsCSV(executionHistory[0])}
+                onClick={() => exportRunAsCSV(executionHistory[0]!)}
                 className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-md
                   border border-border-default bg-bg-secondary text-text-secondary
                   hover:bg-bg-input hover:text-text-primary transition-colors"

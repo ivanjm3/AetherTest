@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 set -euo pipefail
-# ─── Update App Runner env vars / image without re-passing IAM roles ──────────
+# â”€â”€â”€ Update App Runner env vars / image without re-passing IAM roles â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "${SCRIPT_DIR}/config.sh"
@@ -12,7 +12,7 @@ SERVICE_ARN=$(command aws --no-verify-ssl apprunner list-services \
     --output text 2>/dev/null)
 
 if [[ -z "${SERVICE_ARN}" || "${SERVICE_ARN}" == "None" ]]; then
-    echo "❌ Service not found: ${APPRUNNER_SERVICE_NAME}"
+    echo "âŒ Service not found: ${APPRUNNER_SERVICE_NAME}"
     exit 1
 fi
 
@@ -51,4 +51,4 @@ command aws --no-verify-ssl apprunner update-service \
     }" \
     --profile "${AWS_PROFILE}" --region "${AWS_REGION}"
 
-echo "✅ Service update initiated. Takes ~2-3 min to stabilize."
+echo "âœ… Service update initiated. Takes ~2-3 min to stabilize."

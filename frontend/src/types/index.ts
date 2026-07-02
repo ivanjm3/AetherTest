@@ -100,3 +100,19 @@ export interface LogEntry {
 // App state
 export type ActiveTab = 'run-tests' | 'query-validator' | 'results'
 export type RunTestStep = 1 | 2 | 3
+
+// Session types
+export interface Session {
+  id: string
+  name: string
+  createdAt: string
+  updatedAt: string
+  state: {
+    currentStep: RunTestStep
+    jobConfig: JobConfig | null
+    dependencies: Dependency[]
+    testCases: TestCase[]
+    selectedTestIds: string[]
+    executionHistory: ExecutionRun[]
+  }
+}

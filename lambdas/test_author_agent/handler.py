@@ -13,7 +13,6 @@ import uuid
 import boto3
 from datetime import datetime, timezone
 
-os.environ.setdefault("AWS_PROFILE", "kiro-dev")
 os.environ.setdefault("AWS_DEFAULT_REGION", "us-east-1")
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "../../layers"))
@@ -89,7 +88,7 @@ def handler(event: dict, context) -> dict:
         content = req.get("content", "")
         component = req.get("component", "unknown")
 
-        print(f"  → Authoring tests for {req_id}: {content[:60]}...")
+        print(f"  â†’ Authoring tests for {req_id}: {content[:60]}...")
 
         test_cases = _author_test_cases(
             req_id=req_id,
@@ -106,7 +105,7 @@ def handler(event: dict, context) -> dict:
             "component": component,
             "tests_authored": len(test_cases),
         })
-        print(f"    ✓ Generated {len(test_cases)} BDD test cases")
+        print(f"    âœ“ Generated {len(test_cases)} BDD test cases")
 
     # Save to S3
     suite_id = str(uuid.uuid4())

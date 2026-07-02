@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 set -euo pipefail
-# ─── CloudFront CDN in front of App Runner (Zscaler-friendly URL) ─────────────
+# â”€â”€â”€ CloudFront CDN in front of App Runner (Zscaler-friendly URL) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "${SCRIPT_DIR}/config.sh"
@@ -12,7 +12,7 @@ SERVICE_URL=$(command aws --no-verify-ssl apprunner list-services \
     --output text 2>/dev/null)
 
 if [[ -z "${SERVICE_URL}" || "${SERVICE_URL}" == "None" ]]; then
-    echo "❌ App Runner service not found: ${APPRUNNER_SERVICE_NAME}"
+    echo "âŒ App Runner service not found: ${APPRUNNER_SERVICE_NAME}"
     exit 1
 fi
 
@@ -57,7 +57,7 @@ CF_DOMAIN=$(command aws --no-verify-ssl cloudfront get-distribution --id "${DIST
     --query 'Distribution.DomainName' --output text 2>/dev/null)
 
 echo ""
-echo "✅ CloudFront distribution created"
+echo "âœ… CloudFront distribution created"
 echo "   ID:     ${DIST_ID}"
 echo "   Domain: https://${CF_DOMAIN}"
 echo "   Status: Deploying (takes ~5-10 min)"

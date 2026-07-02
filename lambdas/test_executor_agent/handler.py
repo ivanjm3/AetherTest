@@ -15,7 +15,6 @@ import random
 import boto3
 from datetime import datetime, timezone
 
-os.environ.setdefault("AWS_PROFILE", "kiro-dev")
 os.environ.setdefault("AWS_DEFAULT_REGION", "us-east-1")
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "../../layers"))
@@ -117,13 +116,13 @@ def handler(event: dict, context) -> dict:
         if result["status"] == "passed":
             passed += 1
             heal_note = " (self-healed)" if result.get("self_healed") else ""
-            print(f"    ✓ PASSED ({result['duration_ms']}ms){heal_note}")
+            print(f"    âœ“ PASSED ({result['duration_ms']}ms){heal_note}")
         elif result["status"] == "failed":
             failed += 1
-            print(f"    ✗ FAILED: {result.get('failure_reason', 'Unknown')[:80]}")
+            print(f"    âœ— FAILED: {result.get('failure_reason', 'Unknown')[:80]}")
         else:
             skipped += 1
-            print(f"    ⊘ SKIPPED")
+            print(f"    âŠ˜ SKIPPED")
 
     # Build execution report
     execution_report = {

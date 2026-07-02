@@ -1,6 +1,7 @@
 import type { JobConfig, Dependency, TestCase, ExecutionRun } from '@/types'
 
-const API_BASE = import.meta.env.VITE_API_BASE || 'http://localhost:8001'
+// Empty string = same-origin (production container). Undefined = local dev fallback.
+const API_BASE = import.meta.env.VITE_API_BASE ?? 'http://localhost:8001'
 
 interface AnalyzeJobResponse {
   job_name: string

@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 set -euo pipefail
-# ─── Standalone App Runner creation (use after first ECR push) ────────────────
+# â”€â”€â”€ Standalone App Runner creation (use after first ECR push) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "${SCRIPT_DIR}/config.sh"
@@ -54,4 +54,4 @@ command aws --no-verify-ssl apprunner create-service \
     }" \
     --profile "${AWS_PROFILE}" --region "${AWS_REGION}"
 
-echo "✅ App Runner service created. Auto-deploys on ECR :latest push."
+echo "âœ… App Runner service created. Auto-deploys on ECR :latest push."

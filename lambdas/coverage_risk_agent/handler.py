@@ -15,7 +15,6 @@ import uuid
 import boto3
 from datetime import datetime, timezone
 
-os.environ.setdefault("AWS_PROFILE", "kiro-dev")
 os.environ.setdefault("AWS_DEFAULT_REGION", "us-east-1")
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "../../layers"))

@@ -1,5 +1,6 @@
-import { useEffect } from 'react'
+import { useEffect, useRef } from 'react'
 import { useAppStore } from '@/store/appStore'
+import { useSessionStore } from '@/store/sessionStore'
 import Sidebar from '@/components/Sidebar'
 import LogPanel from '@/components/LogPanel'
 import RunTests from '@/pages/RunTests'
@@ -15,10 +16,38 @@ export default function App() {
 
   const isProcessing = isLoadingJob || isGeneratingTests || isRunningTests || isQuerying
 
+  // Loading cursor
   useEffect(() => {
     document.body.classList.toggle('cursor-loading', isProcessing)
     return () => { document.body.classList.remove('cursor-loading') }
   }, [isProcessing])
+
+  // Restore last session on app boot
+  const restored = useRef(false)
+  useEffect(() => {
+    if (!restored.current) {
+      restored.current = true
+      useSessionStore.getState().restoreLastSession()
+    }
+  }, [])
+
+  // Auto-save active session on every meaningful state change
+  const currentStep = useAppStore((s) => s.currentStep)
+  const jobConfig = useAppStore((s) => s.jobConfig)
+  const dependencies = useAppStore((s) => s.dependencies)
+  const testCases = useAppStore((s) => s.testCases)
+  const selectedTestIds = useAppStore((s) => s.selectedTestIds)
+  const executionHistory = useAppStore((s) => s.executionHistory)
+  const activeSessionId = useSessionStore((s) => s.activeSessionId)
+  const saveCurrentSession = useSessionStore((s) => s.saveCurrentSession)
+
+  useEffect(() => {
+    if (!activeSessionId) return
+    const timer = setTimeout(() => {
+      saveCurrentSession()
+    }, 300)
+    return () => clearTimeout(timer)
+  }, [currentStep, jobConfig, dependencies, testCases, selectedTestIds, executionHistory, activeSessionId, saveCurrentSession])
 
   return (
     <div className="flex h-screen w-screen overflow-hidden bg-bg-primary">

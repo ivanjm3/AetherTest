@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 set -euo pipefail
-# ══════════════════════════════════════════════════════════════════════════════
-# AetherTest — App Runner Setup (REQUIRES IAM ADMIN / iam:PassRole)
-# ══════════════════════════════════════════════════════════════════════════════
+# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+# AetherTest â€” App Runner Setup (REQUIRES IAM ADMIN / iam:PassRole)
+# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 #
 # This script must be run by someone with iam:PassRole permission.
 # It creates:
@@ -10,15 +10,15 @@ set -euo pipefail
 #   2. App Runner service pointing at ECR image
 #
 # After this runs once, the PowerUserAccess developer can redeploy
-# via CodeBuild → ECR push → App Runner auto-deploys (no iam:PassRole needed).
+# via CodeBuild â†’ ECR push â†’ App Runner auto-deploys (no iam:PassRole needed).
 #
 # Usage:
 #   aws sso login --profile <ADMIN_PROFILE>
 #   bash deploy/admin-setup-apprunner.sh
 #
-# ══════════════════════════════════════════════════════════════════════════════
+# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 
-# ─── Configuration ────────────────────────────────────────────────────────────
+# â”€â”€â”€ Configuration â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 AWS_ACCOUNT_ID="654654478821"
 AWS_REGION="us-east-1"
 AWS_PROFILE="${1:-PowerUserAccess-654654478821}"  # Pass profile as arg or use default
@@ -37,23 +37,23 @@ ECR_ACCESS_ROLE_NAME="AppRunnerECRAccessRole"
 
 ECR_URI="${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com/${ECR_REPO_NAME}:latest"
 
-echo "══════════════════════════════════════════════════════════════"
-echo "  AetherTest — Admin App Runner Setup"
+echo "â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•"
+echo "  AetherTest â€” Admin App Runner Setup"
 echo "  Account: ${AWS_ACCOUNT_ID} | Region: ${AWS_REGION}"
 echo "  Profile: ${AWS_PROFILE}"
-echo "══════════════════════════════════════════════════════════════"
+echo "â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•"
 echo ""
 
-# ─── Step 1: Create Instance Role (Bedrock/S3/Athena access) ─────────────────
+# â”€â”€â”€ Step 1: Create Instance Role (Bedrock/S3/Athena access) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 echo "[Step 1/3] Instance Role: ${INSTANCE_ROLE_NAME}"
 
 if aws --no-verify-ssl iam get-role --role-name "${INSTANCE_ROLE_NAME}" \
     --profile "${AWS_PROFILE}" --region "${AWS_REGION}" &>/dev/null; then
-    echo "  ✅ Role exists: ${INSTANCE_ROLE_NAME}"
+    echo "  âœ… Role exists: ${INSTANCE_ROLE_NAME}"
 else
     echo "  Creating role: ${INSTANCE_ROLE_NAME}..."
 
-    # Trust policy — allow App Runner tasks to assume this role
+    # Trust policy â€” allow App Runner tasks to assume this role
     aws --no-verify-ssl iam create-role \
         --role-name "${INSTANCE_ROLE_NAME}" \
         --assume-role-policy-document '{
@@ -126,16 +126,16 @@ else
         }' \
         --profile "${AWS_PROFILE}" --region "${AWS_REGION}"
 
-    echo "  ✅ Created role with Bedrock/S3/Athena/Glue/SFN permissions"
+    echo "  âœ… Created role with Bedrock/S3/Athena/Glue/SFN permissions"
 fi
 
-# ─── Step 2: Create ECR Access Role ──────────────────────────────────────────
+# â”€â”€â”€ Step 2: Create ECR Access Role â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 echo ""
 echo "[Step 2/3] ECR Access Role: ${ECR_ACCESS_ROLE_NAME}"
 
 if aws --no-verify-ssl iam get-role --role-name "${ECR_ACCESS_ROLE_NAME}" \
     --profile "${AWS_PROFILE}" --region "${AWS_REGION}" &>/dev/null; then
-    echo "  ✅ Role exists: ${ECR_ACCESS_ROLE_NAME}"
+    echo "  âœ… Role exists: ${ECR_ACCESS_ROLE_NAME}"
 else
     echo "  Creating role: ${ECR_ACCESS_ROLE_NAME}..."
 
@@ -156,10 +156,10 @@ else
         --policy-arn "arn:aws:iam::aws:policy/service-role/AWSAppRunnerServicePolicyForECRAccess" \
         --profile "${AWS_PROFILE}" --region "${AWS_REGION}"
 
-    echo "  ✅ Created role with ECR pull permissions"
+    echo "  âœ… Created role with ECR pull permissions"
 fi
 
-# ─── Step 3: Create App Runner Service ────────────────────────────────────────
+# â”€â”€â”€ Step 3: Create App Runner Service â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 echo ""
 echo "[Step 3/3] App Runner Service: ${SERVICE_NAME}"
 
@@ -170,7 +170,7 @@ EXISTING_ARN=$(aws --no-verify-ssl apprunner list-services \
     --output text 2>/dev/null || echo "")
 
 if [[ -n "${EXISTING_ARN}" && "${EXISTING_ARN}" != "None" ]]; then
-    echo "  ✅ Service already exists: ${SERVICE_NAME}"
+    echo "  âœ… Service already exists: ${SERVICE_NAME}"
     echo "     ARN: ${EXISTING_ARN}"
 else
     echo "  Creating App Runner service..."
@@ -180,7 +180,7 @@ else
     echo "    Mem:   ${MEMORY}"
 
     # Wait for roles to propagate
-    echo "  ⏳ Waiting 10s for IAM role propagation..."
+    echo "  â³ Waiting 10s for IAM role propagation..."
     sleep 10
 
     aws --no-verify-ssl apprunner create-service \
@@ -220,15 +220,15 @@ else
         --profile "${AWS_PROFILE}" --region "${AWS_REGION}"
 
     echo ""
-    echo "  ✅ App Runner service created!"
+    echo "  âœ… App Runner service created!"
 fi
 
 echo ""
-echo "══════════════════════════════════════════════════════════════"
-echo "  DONE — Admin setup complete."
+echo "â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•"
+echo "  DONE â€” Admin setup complete."
 echo ""
 echo "  After this, the developer (PowerUserAccess) can redeploy via:"
 echo "    bash deploy/deploy.sh --build-backend"
 echo ""
-echo "  ECR push → App Runner auto-redeploys (no iam:PassRole needed)"
-echo "══════════════════════════════════════════════════════════════"
+echo "  ECR push â†’ App Runner auto-redeploys (no iam:PassRole needed)"
+echo "â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•"

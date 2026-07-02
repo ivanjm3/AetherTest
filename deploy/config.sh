@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# ─── AetherTest Deployment Configuration ──────────────────────────────────────
+# â”€â”€â”€ AetherTest Deployment Configuration â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 # Adapt these values to your AWS account/region.
 
 export APP_NAME="aethertest"
@@ -21,7 +21,7 @@ export APPRUNNER_CPU="1 vCPU"
 export APPRUNNER_MEMORY="2 GB"
 export APPRUNNER_HEALTH_PATH="/api/health"
 
-# IAM Roles (pre-existing, reused — no IAM creation needed)
+# IAM Roles (pre-existing, reused â€” no IAM creation needed)
 export APPRUNNER_INSTANCE_ROLE_ARN="arn:aws:iam::${AWS_ACCOUNT_ID}:role/talk2data-apprunner-role"
 export APPRUNNER_ECR_ACCESS_ROLE_ARN="arn:aws:iam::${AWS_ACCOUNT_ID}:role/AppRunnerECRAccessRole"
 export CODEBUILD_ROLE_ARN="arn:aws:iam::${AWS_ACCOUNT_ID}:role/talk2data-codebuild-role"

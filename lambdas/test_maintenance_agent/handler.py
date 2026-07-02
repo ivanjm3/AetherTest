@@ -14,7 +14,6 @@ import uuid
 import boto3
 from datetime import datetime, timezone
 
-os.environ.setdefault("AWS_PROFILE", "kiro-dev")
 os.environ.setdefault("AWS_DEFAULT_REGION", "us-east-1")
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "../../layers"))
@@ -84,7 +83,7 @@ def handler(event: dict, context) -> dict:
     if not aut_changes:
         return {
             "statusCode": 200,
-            "message": "No AUT changes detected — no maintenance required",
+            "message": "No AUT changes detected â€” no maintenance required",
             "maintenance_report": {"updated": 0, "retired": 0, "no_change": len(test_cases)},
         }
 
@@ -114,17 +113,17 @@ def handler(event: dict, context) -> dict:
             })
             continue
 
-        print(f"  → Maintaining: {tc.get('test_name', 'Unknown')[:60]}...")
+        print(f"  â†’ Maintaining: {tc.get('test_name', 'Unknown')[:60]}...")
         result = _maintain_test(tc, relevant_changes)
         maintenance_results.append(result)
 
         action = result.get("maintenance_action", "no_change")
         if action == "updated":
             updated += 1
-            print(f"    ✓ Updated: {result.get('change_summary', '')[:60]}")
+            print(f"    âœ“ Updated: {result.get('change_summary', '')[:60]}")
         elif action == "retired":
             retired += 1
-            print(f"    ✗ Retired: {result.get('retirement_reason', '')[:60]}")
+            print(f"    âœ— Retired: {result.get('retirement_reason', '')[:60]}")
         else:
             no_change += 1
 

@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# ─── AetherTest Deploy Orchestrator ──────────────────────────────────────────
+# â”€â”€â”€ AetherTest Deploy Orchestrator â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 # Usage:
 #   First time:           bash deploy/deploy.sh
 #   Backend only:         bash deploy/deploy.sh --build-backend
@@ -11,14 +11,14 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "${SCRIPT_DIR}/config.sh"
 
-# ─── Disable SSL verify globally (Zscaler/corporate proxy) ────────────────────
+# â”€â”€â”€ Disable SSL verify globally (Zscaler/corporate proxy) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 # Suppress Python InsecureRequestWarning spam
 export PYTHONHTTPSVERIFY=0
 export PYTHONWARNINGS="ignore::urllib3.exceptions.InsecureRequestWarning"
 # Shorthand used in all aws calls below
 NOSSL="--no-verify-ssl"
 
-# ─── Parse args ───────────────────────────────────────────────────────────────
+# â”€â”€â”€ Parse args â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 BUILD_BACKEND=false
 BUILD_FRONTEND=false
 FULL_DEPLOY=true
@@ -32,25 +32,25 @@ while [[ $# -gt 0 ]]; do
     esac
 done
 
-echo "════════════════════════════════════════════════════════════"
-echo "  AetherTest — AWS Deployment"
+echo "â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•"
+echo "  AetherTest â€” AWS Deployment"
 echo "  Account: ${AWS_ACCOUNT_ID} | Region: ${AWS_REGION}"
 echo "  SSL verify: disabled (corporate proxy)"
-echo "════════════════════════════════════════════════════════════"
+echo "â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•"
 
-# ─── Helper: await CodeBuild ──────────────────────────────────────────────────
+# â”€â”€â”€ Helper: await CodeBuild â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 await_codebuild() {
     local build_id="$1"
     local project="$2"
-    echo "  ⏳ Waiting for CodeBuild: ${build_id}..."
+    echo "  â³ Waiting for CodeBuild: ${build_id}..."
     while true; do
         status=$(command aws --no-verify-ssl codebuild batch-get-builds --ids "${build_id}" \
             --profile "${AWS_PROFILE}" --region "${AWS_REGION}" \
             --query 'builds[0].buildStatus' --output text 2>/dev/null)
         case "${status}" in
-            SUCCEEDED) echo "  ✅ Build succeeded: ${project}"; return 0 ;;
+            SUCCEEDED) echo "  âœ… Build succeeded: ${project}"; return 0 ;;
             FAILED|FAULT|TIMED_OUT|STOPPED)
-                echo "  ❌ Build ${status}: ${project}"
+                echo "  âŒ Build ${status}: ${project}"
                 echo "     Check logs: https://${AWS_REGION}.console.aws.amazon.com/codesuite/codebuild/projects/${project}/build/${build_id}"
                 return 1 ;;
             *) sleep 10 ;;
@@ -58,33 +58,33 @@ await_codebuild() {
     done
 }
 
-# ─── Step 1: ECR Repository ──────────────────────────────────────────────────
+# â”€â”€â”€ Step 1: ECR Repository â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 create_ecr() {
     echo ""
     echo "[Step 1/6] ECR Repository"
     if command aws --no-verify-ssl ecr describe-repositories --repository-names "${ECR_REPO_NAME}" \
         --profile "${AWS_PROFILE}" --region "${AWS_REGION}" &>/dev/null; then
-        echo "  ✅ ECR repo exists: ${ECR_REPO_NAME}"
+        echo "  âœ… ECR repo exists: ${ECR_REPO_NAME}"
     else
         command aws --no-verify-ssl ecr create-repository --repository-name "${ECR_REPO_NAME}" \
             --image-scanning-configuration scanOnPush=true \
             --profile "${AWS_PROFILE}" --region "${AWS_REGION}" > /dev/null 2>&1
-        echo "  ✅ Created ECR repo: ${ECR_REPO_NAME}"
+        echo "  âœ… Created ECR repo: ${ECR_REPO_NAME}"
     fi
 }
 
-# ─── Step 2: S3 Buckets ──────────────────────────────────────────────────────
+# â”€â”€â”€ Step 2: S3 Buckets â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 create_s3_buckets() {
     echo ""
     echo "[Step 2/6] S3 Buckets"
     for bucket in "${FRONTEND_BUCKET}" "${CODEBUILD_ARTIFACT_BUCKET}"; do
         if command aws --no-verify-ssl s3api head-bucket --bucket "${bucket}" \
             --profile "${AWS_PROFILE}" --region "${AWS_REGION}" 2>/dev/null; then
-            echo "  ✅ Bucket exists: ${bucket}"
+            echo "  âœ… Bucket exists: ${bucket}"
         else
             command aws --no-verify-ssl s3api create-bucket --bucket "${bucket}" \
                 --profile "${AWS_PROFILE}" --region "${AWS_REGION}" > /dev/null 2>&1
-            echo "  ✅ Created bucket: ${bucket}"
+            echo "  âœ… Created bucket: ${bucket}"
         fi
     done
 
@@ -94,14 +94,14 @@ create_s3_buckets() {
         --profile "${AWS_PROFILE}" --region "${AWS_REGION}" 2>/dev/null || true
 }
 
-# ─── Step 3: Docker Image (via CodeBuild) ────────────────────────────────────
+# â”€â”€â”€ Step 3: Docker Image (via CodeBuild) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 build_backend() {
     echo ""
     echo "[Step 3/6] Backend Docker Image (CodeBuild)"
 
-    # Zip source → S3
+    # Zip source â†’ S3
     local zip_key="source/${APP_NAME}-backend-$(date +%s).zip"
-    echo "  📦 Zipping source..."
+    echo "  ðŸ“¦ Zipping source..."
     (cd "${SCRIPT_DIR}/.." && zip -qr "/tmp/${APP_NAME}-backend.zip" \
         aethertest/ lambdas/ layers/ frontend/api-server.py frontend/package.json \
         frontend/tsconfig.json frontend/vite.config.ts frontend/index.html \
@@ -115,7 +115,7 @@ build_backend() {
     command aws --no-verify-ssl s3 cp "/tmp/${APP_NAME}-backend.zip" \
         "s3://${CODEBUILD_ARTIFACT_BUCKET}/${zip_key}" \
         --profile "${AWS_PROFILE}" --region "${AWS_REGION}" > /dev/null 2>&1
-    echo "  ✅ Source uploaded: s3://${CODEBUILD_ARTIFACT_BUCKET}/${zip_key}"
+    echo "  âœ… Source uploaded: s3://${CODEBUILD_ARTIFACT_BUCKET}/${zip_key}"
 
     # Ensure CodeBuild project exists
     ensure_codebuild_backend
@@ -134,7 +134,7 @@ build_backend() {
     await_codebuild "${build_id}" "${CODEBUILD_PROJECT_NAME}"
 }
 
-# ─── Step 4: App Runner Service ──────────────────────────────────────────────
+# â”€â”€â”€ Step 4: App Runner Service â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 create_apprunner() {
     echo ""
     echo "[Step 4/6] App Runner Service"
@@ -147,7 +147,7 @@ create_apprunner() {
         --output text 2>/dev/null || echo "")
 
     if [[ -n "${service_arn}" && "${service_arn}" != "None" ]]; then
-        echo "  ✅ App Runner service exists: ${APPRUNNER_SERVICE_NAME}"
+        echo "  âœ… App Runner service exists: ${APPRUNNER_SERVICE_NAME}"
         echo "     ARN: ${service_arn}"
         return 0
     fi
@@ -201,12 +201,12 @@ create_apprunner() {
         }" \
         --profile "${AWS_PROFILE}" --region "${AWS_REGION}" > /dev/null 2>&1
 
-    echo "  ✅ Created App Runner service: ${APPRUNNER_SERVICE_NAME}"
+    echo "  âœ… Created App Runner service: ${APPRUNNER_SERVICE_NAME}"
     echo "     Image: ${ecr_uri}"
     echo "     Port: ${APPRUNNER_PORT}"
 }
 
-# ─── Step 5: CodeBuild Projects ──────────────────────────────────────────────
+# â”€â”€â”€ Step 5: CodeBuild Projects â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 ensure_codebuild_backend() {
     if command aws --no-verify-ssl codebuild batch-get-projects --names "${CODEBUILD_PROJECT_NAME}" \
         --profile "${AWS_PROFILE}" --region "${AWS_REGION}" \
@@ -214,7 +214,7 @@ ensure_codebuild_backend() {
         return 0
     fi
 
-    echo "  🔨 Creating CodeBuild project: ${CODEBUILD_PROJECT_NAME}"
+    echo "  ðŸ”¨ Creating CodeBuild project: ${CODEBUILD_PROJECT_NAME}"
     if ! command aws --no-verify-ssl codebuild create-project \
         --name "${CODEBUILD_PROJECT_NAME}" \
         --source "{\"type\":\"S3\",\"location\":\"${CODEBUILD_ARTIFACT_BUCKET}/source/placeholder.zip\"}" \
@@ -232,12 +232,12 @@ ensure_codebuild_backend() {
         }" \
         --service-role "${CODEBUILD_ROLE_ARN}" \
         --profile "${AWS_PROFILE}" --region "${AWS_REGION}"; then
-        echo "  ❌ Failed to create CodeBuild project: ${CODEBUILD_PROJECT_NAME}"
+        echo "  âŒ Failed to create CodeBuild project: ${CODEBUILD_PROJECT_NAME}"
         echo "     Check that role exists: ${CODEBUILD_ROLE_ARN}"
         echo "     You may need iam:PassRole permission."
         return 1
     fi
-    echo "  ✅ Created CodeBuild project: ${CODEBUILD_PROJECT_NAME}"
+    echo "  âœ… Created CodeBuild project: ${CODEBUILD_PROJECT_NAME}"
 }
 
 ensure_codebuild_frontend() {
@@ -247,7 +247,7 @@ ensure_codebuild_frontend() {
         return 0
     fi
 
-    echo "  🔨 Creating CodeBuild project: ${CODEBUILD_FRONTEND_PROJECT}"
+    echo "  ðŸ”¨ Creating CodeBuild project: ${CODEBUILD_FRONTEND_PROJECT}"
     if ! command aws --no-verify-ssl codebuild create-project \
         --name "${CODEBUILD_FRONTEND_PROJECT}" \
         --source "{\"type\":\"S3\",\"location\":\"${CODEBUILD_ARTIFACT_BUCKET}/source/placeholder.zip\"}" \
@@ -263,14 +263,14 @@ ensure_codebuild_frontend() {
         }" \
         --service-role "${CODEBUILD_ROLE_ARN}" \
         --profile "${AWS_PROFILE}" --region "${AWS_REGION}"; then
-        echo "  ❌ Failed to create CodeBuild project: ${CODEBUILD_FRONTEND_PROJECT}"
+        echo "  âŒ Failed to create CodeBuild project: ${CODEBUILD_FRONTEND_PROJECT}"
         echo "     Check that role exists: ${CODEBUILD_ROLE_ARN}"
         return 1
     fi
-    echo "  ✅ Created CodeBuild project: ${CODEBUILD_FRONTEND_PROJECT}"
+    echo "  âœ… Created CodeBuild project: ${CODEBUILD_FRONTEND_PROJECT}"
 }
 
-# ─── Step 6: Initial Build Trigger ───────────────────────────────────────────
+# â”€â”€â”€ Step 6: Initial Build Trigger â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 initial_build_trigger() {
     echo ""
     echo "[Step 6/6] Initial Build Trigger"
@@ -282,21 +282,21 @@ initial_build_trigger() {
         --query 'length(imageIds)' --output text 2>/dev/null || echo "0")
 
     if [[ "${image_count}" == "0" || "${image_count}" == "None" ]]; then
-        echo "  📦 ECR empty — triggering initial backend build..."
+        echo "  ðŸ“¦ ECR empty â€” triggering initial backend build..."
         build_backend
     else
-        echo "  ✅ ECR has ${image_count} image(s), skipping initial build"
+        echo "  âœ… ECR has ${image_count} image(s), skipping initial build"
     fi
 }
 
-# ─── Frontend Build (via CodeBuild) ──────────────────────────────────────────
+# â”€â”€â”€ Frontend Build (via CodeBuild) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 build_frontend() {
     echo ""
     echo "  Frontend Build (CodeBuild)"
 
-    # Zip frontend source → S3
+    # Zip frontend source â†’ S3
     local zip_key="source/${APP_NAME}-frontend-$(date +%s).zip"
-    echo "  📦 Zipping frontend..."
+    echo "  ðŸ“¦ Zipping frontend..."
     (cd "${SCRIPT_DIR}/../frontend" && zip -qr "/tmp/${APP_NAME}-frontend.zip" \
         src/ public/ index.html package.json package-lock.json \
         tsconfig.json vite.config.ts \
@@ -308,7 +308,7 @@ build_frontend() {
     command aws --no-verify-ssl s3 cp "/tmp/${APP_NAME}-frontend.zip" \
         "s3://${CODEBUILD_ARTIFACT_BUCKET}/${zip_key}" \
         --profile "${AWS_PROFILE}" --region "${AWS_REGION}" > /dev/null 2>&1
-    echo "  ✅ Frontend source uploaded"
+    echo "  âœ… Frontend source uploaded"
 
     ensure_codebuild_frontend
 
@@ -325,7 +325,7 @@ build_frontend() {
     await_codebuild "${build_id}" "${CODEBUILD_FRONTEND_PROJECT}"
 }
 
-# ─── Execute ──────────────────────────────────────────────────────────────────
+# â”€â”€â”€ Execute â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 if [[ "${FULL_DEPLOY}" == "true" ]]; then
     create_ecr
@@ -336,9 +336,9 @@ if [[ "${FULL_DEPLOY}" == "true" ]]; then
     ensure_codebuild_frontend
     initial_build_trigger
     echo ""
-    echo "════════════════════════════════════════════════════════════"
-    echo "  ✅ Full deployment complete!"
-    echo "════════════════════════════════════════════════════════════"
+    echo "â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•"
+    echo "  âœ… Full deployment complete!"
+    echo "â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•"
 else
     if [[ "${BUILD_BACKEND}" == "true" ]]; then
         build_backend
@@ -347,5 +347,5 @@ else
         build_frontend
     fi
     echo ""
-    echo "  ✅ Build(s) triggered. App Runner auto-deploys on ECR push."
+    echo "  âœ… Build(s) triggered. App Runner auto-deploys on ECR push."
 fi
