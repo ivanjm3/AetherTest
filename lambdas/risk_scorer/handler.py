@@ -13,9 +13,11 @@ from datetime import datetime, timezone
 
 import sys
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "../../layers"))
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), "../../"))
 
 from serializer.models import AUTComponentGraph, RiskScoreRecord
 from serializer.serializer import deserialize
+from aethertest.observability import instrument_handler
 
 dynamodb = boto3.resource("dynamodb", region_name=os.environ.get("AWS_DEFAULT_REGION", "us-east-1"), verify=not os.environ.get("AETHERTEST_NO_SSL_VERIFY", ""))
 DEFECT_PATTERNS_TABLE = os.environ.get("DEFECT_PATTERNS_TABLE", "aethertest-defect-patterns")
@@ -28,6 +30,7 @@ DEFAULT_SCORE = 50.0
 HIGH_PRIORITY_THRESHOLD = 70.0
 
 
+@instrument_handler("risk_scorer")
 def handler(event: dict, context) -> dict:
     """
     Lambda handler for risk score computation.

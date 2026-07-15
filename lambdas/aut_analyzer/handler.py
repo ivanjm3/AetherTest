@@ -13,19 +13,21 @@ from datetime import datetime, timezone
 
 import sys
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "../../layers"))
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), "../../"))
 
 from serializer.models import AUTComponent, AUTComponentGraph, ComponentType
 from serializer.serializer import serialize, deserialize, ParseError
+from aethertest.config import ARTIFACTS_BUCKET as BUCKET_NAME, STRATEGIES_TABLE
+from aethertest.observability import instrument_handler
 
 # AWS clients
 s3 = boto3.client("s3", region_name=os.environ.get("AWS_DEFAULT_REGION", "us-east-1"), verify=not os.environ.get("AETHERTEST_NO_SSL_VERIFY", ""), endpoint_url=os.environ.get("S3_ENDPOINT_URL", "https://s3.us-east-1.amazonaws.com"))
 dynamodb = boto3.resource("dynamodb", region_name=os.environ.get("AWS_DEFAULT_REGION", "us-east-1"), verify=not os.environ.get("AETHERTEST_NO_SSL_VERIFY", ""))
 
-BUCKET_NAME = os.environ.get("AETHERTEST_BUCKET", "aethertest-artifacts-654654478821")
-STRATEGIES_TABLE = os.environ.get("STRATEGIES_TABLE", "aethertest-strategies")
 KNOWLEDGE_BASE_ID = os.environ.get("KNOWLEDGE_BASE_ID", "")
 
 
+@instrument_handler("aut_analyzer")
 def handler(event: dict, context) -> dict:
     """
     Lambda handler for AUT structure analysis.

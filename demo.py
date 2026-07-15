@@ -4,7 +4,7 @@ A fast 2-minute demo using a pre-built e-commerce checkout AUT.
 Shows all 6 agents working with colored terminal output.
 
 Run with:
-    AWS_PROFILE=kiro-dev python3 demo.py
+    AWS_PROFILE=<your-profile> python3 demo.py
 """
 
 from __future__ import annotations
@@ -19,12 +19,13 @@ from datetime import datetime, timezone
 # Suppress SSL warnings when running behind corporate proxy
 warnings.filterwarnings("ignore", message="Unverified HTTPS request")
 
-os.environ["AWS_PROFILE"] = "kiro-dev"
-os.environ["AWS_DEFAULT_REGION"] = "us-east-1"
+os.environ.setdefault("AWS_DEFAULT_REGION", "us-east-1")
 
 # Add layers to path
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "layers"))
 sys.path.insert(0, os.path.dirname(__file__))
+
+from aethertest.config import ARTIFACTS_BUCKET as BUCKET_NAME
 
 # ── ANSI Colors ───────────────────────────────────────────────────────────────
 
@@ -486,12 +487,12 @@ def run_demo():
     print(f"\n  {C.DIM}Rationale: {results.get('verdict_rationale', '')[:80]}{C.RESET}")
 
     print(f"\n{C.DIM}  Data stored in:{C.RESET}")
-    print(f"  {C.DIM}  S3:       s3://aethertest-artifacts-654654478821/{DEMO_AUT['tenant_id']}/{C.RESET}")
+    print(f"  {C.DIM}  S3:       s3://{BUCKET_NAME}/{DEMO_AUT['tenant_id']}/{C.RESET}")
     print(f"  {C.DIM}  DynamoDB: aethertest-strategies, aethertest-agent-assignments{C.RESET}")
-    print(f"  {C.DIM}  Region:   us-east-1 | Profile: kiro-dev{C.RESET}")
+    print(f"  {C.DIM}  Region:   {os.environ.get('AWS_DEFAULT_REGION', 'us-east-1')} | Profile: {os.environ.get('AWS_PROFILE', 'default')}{C.RESET}")
 
     print(f"\n{C.CYAN}  To explore results:{C.RESET}")
-    print(f"  {C.DIM}  streamlit run ui/app.py{C.RESET}")
+    print(f"  {C.DIM}  python3 frontend/api-server.py   # then open the React app{C.RESET}")
     print(f"  {C.DIM}  python3 orchestrator.py --fast{C.RESET}")
     print(f"\n{C.BOLD}{'═'*68}{C.RESET}\n")
 

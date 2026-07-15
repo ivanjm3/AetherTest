@@ -1,3 +1,0 @@
-aethertest
-lambdas
-layers

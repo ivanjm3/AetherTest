@@ -14,12 +14,14 @@ from collections import defaultdict
 
 import sys
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "../../layers"))
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), "../../"))
 
 from serializer.models import (
     TestStrategy, AgentAssignment, ExecutionState,
     AssignmentStatus, ExecutionStatus,
 )
 from serializer.serializer import serialize
+from aethertest.observability import instrument_handler
 
 dynamodb = boto3.resource("dynamodb", region_name=os.environ.get("AWS_DEFAULT_REGION", "us-east-1"), verify=not os.environ.get("AETHERTEST_NO_SSL_VERIFY", ""))
 cloudwatch = boto3.client("cloudwatch", region_name=os.environ.get("AWS_DEFAULT_REGION", "us-east-1"), verify=not os.environ.get("AETHERTEST_NO_SSL_VERIFY", ""))
@@ -33,6 +35,7 @@ ASSIGNMENT_TIMEOUT_SECONDS = 120
 MAX_RETRIES = 3
 
 
+@instrument_handler("agent_dispatcher")
 def handler(event: dict, context) -> dict:
     """
     Lambda handler for agent dispatch.

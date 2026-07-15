@@ -12,9 +12,11 @@ from datetime import datetime, timezone
 
 import sys
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "../../layers"))
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), "../../"))
 
 from serializer.models import DefectPattern, FailureType
 from serializer.serializer import serialize
+from aethertest.observability import instrument_handler
 
 dynamodb = boto3.resource("dynamodb", region_name=os.environ.get("AWS_DEFAULT_REGION", "us-east-1"), verify=not os.environ.get("AETHERTEST_NO_SSL_VERIFY", ""))
 cloudwatch = boto3.client("cloudwatch", region_name=os.environ.get("AWS_DEFAULT_REGION", "us-east-1"), verify=not os.environ.get("AETHERTEST_NO_SSL_VERIFY", ""))
@@ -34,6 +36,7 @@ Classify the given test failure into exactly one of:
 Respond with a JSON object: {"classification": "<type>", "rationale": "<one sentence explanation>"}"""
 
 
+@instrument_handler("failure_triage")
 def handler(event: dict, context) -> dict:
     """
     Lambda handler for failure triage.

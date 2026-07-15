@@ -12,18 +12,18 @@ from datetime import datetime, timezone
 
 import sys
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "../../layers"))
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), "../../"))
 
 from serializer.models import ExecutionState, ExecutionStatus
 from serializer.serializer import serialize
+from aethertest.config import ARTIFACTS_BUCKET as BUCKET_NAME, EXECUTIONS_TABLE, ASSIGNMENTS_TABLE
+from aethertest.observability import instrument_handler
 
 dynamodb = boto3.resource("dynamodb", region_name=os.environ.get("AWS_DEFAULT_REGION", "us-east-1"), verify=not os.environ.get("AETHERTEST_NO_SSL_VERIFY", ""))
 s3 = boto3.client("s3", region_name=os.environ.get("AWS_DEFAULT_REGION", "us-east-1"), verify=not os.environ.get("AETHERTEST_NO_SSL_VERIFY", ""), endpoint_url=os.environ.get("S3_ENDPOINT_URL", "https://s3.us-east-1.amazonaws.com"))
 
-EXECUTIONS_TABLE = os.environ.get("EXECUTIONS_TABLE", "aethertest-executions")
-ASSIGNMENTS_TABLE = os.environ.get("ASSIGNMENTS_TABLE", "aethertest-agent-assignments")
-BUCKET_NAME = os.environ.get("AETHERTEST_BUCKET", "aethertest-artifacts-654654478821")
 
-
+@instrument_handler("result_aggregator")
 def handler(event: dict, context) -> dict:
     """
     Lambda handler for result aggregation.

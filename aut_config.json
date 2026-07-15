@@ -9,9 +9,9 @@
                 "name": "KPI Data Pipeline (Step Functions)",
                 "component_type": "state_machine",
                 "dependencies": ["glue-etl", "iceberg-target"],
-                "api_surface": ["arn:aws:states:us-east-1:654654478821:stateMachine:KPI-Data-Pipeline"],
+                "api_surface": ["arn:aws:states:us-east-1:<your-account-id>:stateMachine:KPI-Data-Pipeline"],
                 "ui_entry_points": [],
-                "metadata": {"criticality": "critical", "arn": "arn:aws:states:us-east-1:654654478821:stateMachine:KPI-Data-Pipeline"}
+                "metadata": {"criticality": "critical", "arn": "arn:aws:states:us-east-1:<your-account-id>:stateMachine:KPI-Data-Pipeline"}
             },
             {
                 "component_id": "glue-etl",

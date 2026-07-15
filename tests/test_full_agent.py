@@ -10,7 +10,7 @@ Complete end-to-end flow:
   7. Learning Update (stores outcomes for next cycle)
 
 Run with:
-    AWS_PROFILE=kiro-dev python3 tests/test_full_agent.py
+    AWS_PROFILE=<your-profile> python3 tests/test_full_agent.py
 """
 
 import json
@@ -18,15 +18,11 @@ import sys
 import os
 import uuid
 
-os.environ["AWS_PROFILE"] = "kiro-dev"
-os.environ["AWS_DEFAULT_REGION"] = "us-east-1"
-os.environ["AETHERTEST_BUCKET"] = "aethertest-artifacts-654654478821"
-os.environ["STRATEGIES_TABLE"] = "aethertest-strategies"
-os.environ["DEFECT_PATTERNS_TABLE"] = "aethertest-defect-patterns"
-os.environ["EXECUTIONS_TABLE"] = "aethertest-executions"
-os.environ["ASSIGNMENTS_TABLE"] = "aethertest-agent-assignments"
+os.environ.setdefault("AWS_DEFAULT_REGION", "us-east-1")
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
+
+from aethertest.config import ARTIFACTS_BUCKET
 
 import boto3
 
@@ -369,7 +365,7 @@ def run():
   └── aethertest-defect-patterns
       └── Defect records      ({summary['failed']} failures recorded)
 
-  S3 Bucket: aethertest-artifacts-654654478821
+  S3 Bucket: {ARTIFACTS_BUCKET}
   ├── {TENANT_ID}/aut-graphs/{AUT_ID}/{AUT_VERSION}.json
   ├── {TENANT_ID}/strategies/{strategy_result['strategy_id'][:8]}....json
   ├── {TENANT_ID}/test-cases/{strategy_result['strategy_id'][:8]}.../{test_gen_result['test_suite_id'][:8]}....json
@@ -378,7 +374,7 @@ def run():
 
   You can view all of this in:
   → AWS Console → DynamoDB → Tables → aethertest-strategies → Explore items
-  → AWS Console → S3 → aethertest-artifacts-654654478821 → {TENANT_ID}/
+  → AWS Console → S3 → {ARTIFACTS_BUCKET} → {TENANT_ID}/
     """)
 
 

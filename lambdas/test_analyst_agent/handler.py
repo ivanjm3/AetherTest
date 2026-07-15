@@ -20,10 +20,13 @@ os.environ.setdefault("AWS_DEFAULT_REGION", "us-east-1")
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "../../layers"))
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "../../"))
 
-BUCKET_NAME = os.environ.get("AETHERTEST_BUCKET", "aethertest-artifacts-654654478821")
-ASSIGNMENTS_TABLE = os.environ.get("ASSIGNMENTS_TABLE", "aethertest-agent-assignments")
-DEFECT_PATTERNS_TABLE = os.environ.get("DEFECT_PATTERNS_TABLE", "aethertest-defect-patterns")
-MODEL_ID = os.environ.get("BEDROCK_MODEL_ID", "us.anthropic.claude-sonnet-4-20250514-v1:0")
+from aethertest.config import (
+    ARTIFACTS_BUCKET as BUCKET_NAME,
+    ASSIGNMENTS_TABLE,
+    DEFECT_PATTERNS_TABLE,
+    BEDROCK_MODEL_ID as MODEL_ID,
+)
+from aethertest.observability import instrument_handler
 
 # Lazy-initialized clients â€” created on first use, not at import time.
 # This avoids boto3 session creation during import (which fails in containers
@@ -81,6 +84,7 @@ Classification guide:
 - regression: Previously working feature broke due to a code change"""
 
 
+@instrument_handler("test_analyst_agent")
 def handler(event: dict, context) -> dict:
     """
     Lambda handler for Test Analyst Agent.

@@ -50,7 +50,7 @@ CLAUDE_MODEL_ID = os.environ.get(
 )
 
 # Athena config
-ATHENA_OUTPUT_BUCKET = os.environ.get("ATHENA_OUTPUT_BUCKET", "aethertest-athena-results-654654478821")
+ATHENA_OUTPUT_BUCKET = os.environ.get("ATHENA_OUTPUT_BUCKET", "aethertest-athena-results")
 ATHENA_DATABASE = os.environ.get("ATHENA_DATABASE", "default")
 ATHENA_WORKGROUP = os.environ.get("ATHENA_WORKGROUP", "primary")
 

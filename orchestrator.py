@@ -3,8 +3,8 @@ AetherTest Master Orchestrator
 Runs the complete multi-agent testing pipeline end-to-end.
 
 Usage:
-    AWS_PROFILE=kiro-dev python3 orchestrator.py
-    AWS_PROFILE=kiro-dev python3 orchestrator.py --aut-file my_aut.json
+    AWS_PROFILE=<your-profile> python3 orchestrator.py
+    AWS_PROFILE=<your-profile> python3 orchestrator.py --aut-file my_aut.json
 """
 
 from __future__ import annotations
@@ -15,8 +15,7 @@ import uuid
 import argparse
 from datetime import datetime, timezone
 
-os.environ["AWS_PROFILE"] = "kiro-dev"
-os.environ["AWS_DEFAULT_REGION"] = "us-east-1"
+os.environ.setdefault("AWS_DEFAULT_REGION", "us-east-1")
 
 # Add layers to path
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "layers"))

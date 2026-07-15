@@ -54,7 +54,7 @@ Browser (React) → http://localhost:8001 → Bedrock (Claude Sonnet 4)
 ```
 
 - **No temp keys in code or env files**
-- **No `[kiro-dev]` profile with rotating credentials**
+- **No long-lived static profile with rotating credentials**
 - **SSO token auto-refreshes** as long as the session is active
 
 ## Environment Variables (Backend)

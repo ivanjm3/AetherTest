@@ -1,10 +1,10 @@
 """
 AetherTest End-to-End Pipeline Test
 Tests the full flow: AUT Analysis → Risk Scoring → Strategy Generation
-Uses real AWS DynamoDB and S3 with kiro-dev profile.
+Uses real AWS DynamoDB and S3 — set AWS_PROFILE/AETHERTEST_BUCKET in the environment.
 
 Run with:
-    AWS_PROFILE=kiro-dev python3 tests/test_e2e_pipeline.py
+    AWS_PROFILE=<your-profile> python3 tests/test_e2e_pipeline.py
 """
 
 import json
@@ -12,19 +12,13 @@ import sys
 import os
 import uuid
 
-# Set AWS profile before any boto3 imports
-os.environ["AWS_PROFILE"] = "kiro-dev"
-os.environ["AWS_DEFAULT_REGION"] = "us-east-1"
-os.environ["AETHERTEST_BUCKET"] = "aethertest-artifacts-654654478821"
-os.environ["STRATEGIES_TABLE"] = "aethertest-strategies"
-os.environ["DEFECT_PATTERNS_TABLE"] = "aethertest-defect-patterns"
-os.environ["EXECUTIONS_TABLE"] = "aethertest-executions"
-os.environ["ASSIGNMENTS_TABLE"] = "aethertest-agent-assignments"
+os.environ.setdefault("AWS_DEFAULT_REGION", "us-east-1")
 
 # Add project root to path
 sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 
 import boto3
+from aethertest.config import ARTIFACTS_BUCKET, AWS_REGION
 
 # ── Test Data ─────────────────────────────────────────────────────────────────
 
@@ -107,8 +101,8 @@ def run_e2e_test():
     print_header("AetherTest End-to-End Pipeline Test")
     print(f"  Tenant:  {TENANT_ID}")
     print(f"  AUT:     {AUT_ID} {AUT_VERSION}")
-    print(f"  Region:  us-east-1")
-    print(f"  Account: 654654478821")
+    print(f"  Region:  {AWS_REGION}")
+    print(f"  Bucket:  {ARTIFACTS_BUCKET}")
 
     # ── Step 1: Verify AWS connectivity ──────────────────────────────────────
     print_step(1, "Verifying AWS connectivity")
@@ -140,8 +134,8 @@ def run_e2e_test():
     print_step(3, "Verifying S3 bucket")
     s3 = boto3.client("s3", region_name="us-east-1")
     try:
-        s3.head_bucket(Bucket="aethertest-artifacts-654654478821")
-        print_ok("S3 bucket 'aethertest-artifacts-654654478821' exists")
+        s3.head_bucket(Bucket=ARTIFACTS_BUCKET)
+        print_ok(f"S3 bucket '{ARTIFACTS_BUCKET}' exists")
     except Exception as e:
         print_fail(f"S3 bucket not found: {e}")
 
@@ -170,7 +164,7 @@ def run_e2e_test():
         print_ok(f"Stored in S3: {s3_key}")
 
         # Verify S3 object was created
-        s3.head_object(Bucket="aethertest-artifacts-654654478821", Key=s3_key)
+        s3.head_object(Bucket=ARTIFACTS_BUCKET, Key=s3_key)
         print_ok("S3 object verified")
 
         # Verify DynamoDB record was created
@@ -259,7 +253,7 @@ def run_e2e_test():
         print_ok(f"Stored in S3: {strategy_s3_key}")
 
         # Verify S3 strategy object
-        s3.head_object(Bucket="aethertest-artifacts-654654478821", Key=strategy_s3_key)
+        s3.head_object(Bucket=ARTIFACTS_BUCKET, Key=strategy_s3_key)
         print_ok("Strategy JSON verified in S3")
 
         # Verify DynamoDB strategy record

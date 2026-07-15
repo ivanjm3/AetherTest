@@ -19,9 +19,9 @@ set -euo pipefail
 # â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 
 # â”€â”€â”€ Configuration â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-AWS_ACCOUNT_ID="654654478821"
+AWS_ACCOUNT_ID="${AWS_ACCOUNT_ID:?set AWS_ACCOUNT_ID in your environment}"
 AWS_REGION="us-east-1"
-AWS_PROFILE="${1:-PowerUserAccess-654654478821}"  # Pass profile as arg or use default
+AWS_PROFILE="${1:?pass an AWS profile name as the first argument}"
 
 APP_NAME="aethertest"
 ECR_REPO_NAME="${APP_NAME}-prod"

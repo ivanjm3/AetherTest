@@ -3,9 +3,9 @@
 # Adapt these values to your AWS account/region.
 
 export APP_NAME="aethertest"
-export AWS_ACCOUNT_ID="654654478821"
+export AWS_ACCOUNT_ID="${AWS_ACCOUNT_ID:?set AWS_ACCOUNT_ID in your environment}"
 export AWS_REGION="us-east-1"
-export AWS_PROFILE="PowerUserAccess-654654478821"
+export AWS_PROFILE="${AWS_PROFILE:?set AWS_PROFILE in your environment}"
 
 # ECR
 export ECR_REPO_NAME="${APP_NAME}-prod"
@@ -22,13 +22,13 @@ export APPRUNNER_MEMORY="2 GB"
 export APPRUNNER_HEALTH_PATH="/api/health"
 
 # IAM Roles (pre-existing, reused â€” no IAM creation needed)
-export APPRUNNER_INSTANCE_ROLE_ARN="arn:aws:iam::${AWS_ACCOUNT_ID}:role/talk2data-apprunner-role"
+export APPRUNNER_INSTANCE_ROLE_ARN="arn:aws:iam::${AWS_ACCOUNT_ID}:role/${APP_NAME}-apprunner-role"
 export APPRUNNER_ECR_ACCESS_ROLE_ARN="arn:aws:iam::${AWS_ACCOUNT_ID}:role/AppRunnerECRAccessRole"
-export CODEBUILD_ROLE_ARN="arn:aws:iam::${AWS_ACCOUNT_ID}:role/talk2data-codebuild-role"
+export CODEBUILD_ROLE_ARN="arn:aws:iam::${AWS_ACCOUNT_ID}:role/${APP_NAME}-codebuild-role"
 
-# CodeBuild (reuse existing project to avoid iam:PassRole restriction)
-export CODEBUILD_PROJECT_NAME="talk2data-build-talk2data-ui"
-export CODEBUILD_FRONTEND_PROJECT="talk2data-build-talk2data-ui"
+# CodeBuild
+export CODEBUILD_PROJECT_NAME="${APP_NAME}-build-${APP_NAME}-ui"
+export CODEBUILD_FRONTEND_PROJECT="${APP_NAME}-build-${APP_NAME}-ui"
 
 # Container env vars
 # SSL verification (Zscaler/corporate proxy)

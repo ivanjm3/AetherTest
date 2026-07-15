@@ -1,660 +1,213 @@
+# AetherTest
 
+AetherTest is an AWS-native, multi-agent testing platform that uses Amazon Bedrock (Claude) to automate the test lifecycle for a target application: mapping its structure, scoring risk, generating and authoring test cases, executing them in a real headless browser, triaging failures, and issuing a deployment verdict (`safe_to_deploy` / `deploy_with_caution` / `do_not_deploy`). Each pipeline stage is an independent AWS Lambda handler orchestrated either by a local Python orchestrator (for demos) or an AWS Step Functions state machine (for production), with results persisted to S3 and DynamoDB and surfaced through a React/FastAPI web app.
 
-# AetherTest — Multi-Agent AI Testing Platform
+This README is the single source of truth for the project — architecture, setup, and design decisions all live here.
 
-**AWS-native intelligent testing solution powered by Claude Sonnet 4**
+## Features
 
-AetherTest is a production-ready multi-agent AI testing platform that uses Amazon Bedrock and Claude Sonnet 4 to automatically analyze applications, generate test strategies, author test cases from requirements, execute tests with self-healing, analyze failures, maintain tests, and provide deployment verdicts.
-
----
-
-## What AetherTest Does
-
-AetherTest replaces manual test planning, authoring, and maintenance with 6 intelligent AI agents that work together to:
-
-1. **Understand your application** — Maps components, dependencies, and risk areas
-2. **Generate test strategies** — Prioritizes testing based on risk scores and change history
-3. **Author BDD tests from requirements** — Converts user stories to Given/When/Then test cases
-4. **Generate comprehensive test cases** — Claude creates functional, edge case, and security tests
-5. **Execute tests intelligently** — Simulates browser/API interactions with self-healing
-6. **Analyze failures deeply** — Classifies defects vs. false positives with root cause analysis
-7. **Maintain tests automatically** — Updates tests when UI elements or APIs change
-8. **Report coverage and risk** — Provides deployment verdicts based on coverage and pass rates
-
----
+- 6-stage agent pipeline: AUT analysis, risk scoring, strategy generation, test authoring/generation, real browser execution, failure triage
+- Real test execution: Claude generates a Playwright script per test case, it runs in a real headless browser, and the trace is uploaded to S3 — not just an LLM guessing pass/fail. Falls back to LLM-simulated execution (clearly tagged `execution_mode: "llm_simulated"` in every result) only when Playwright isn't installed or no target URL was given.
+- BDD test authoring from plain-English user stories (Given/When/Then)
+- Deployment verdicts derived from coverage + pass rate + defect classification
+- Closed-loop learning: defect patterns feed back into future risk scoring
+- Athena-backed query interface for ad hoc analysis of stored results
+- Same Lambda handlers run three ways: in-process (orchestrator/API server), as deployed Lambdas, or as Step Functions tasks
+- Every handler is wrapped with structured JSON logging, CloudWatch metrics, retry-with-backoff on transient AWS errors, and idempotent replay keyed on `execution_id` (`aethertest/observability.py`)
 
 ## Architecture
 
 ```
-┌─────────────────────────────────────────────────────────────────────┐
-│                         AetherTest Platform                         │
-├─────────────────────────────────────────────────────────────────────┤
-│                                                                     │
-│  ┌──────────────────────────────────────────────────────────────┐  │
-│  │  AGENT 1: Test Strategist (AUT Analysis + Risk + Strategy)  │  │
-│  └──────────────────────────────────────────────────────────────┘  │
-│           │                                                         │
-│           ├─► AUT Analyzer       → Maps application structure      │
-│           ├─► Risk Scorer         → Computes component risk        │
-│           └─► Strategy Generator  → Builds test strategy           │
-│                                                                     │
-│  ┌──────────────────────────────────────────────────────────────┐  │
-│  │  AGENT 2: Test Author (Requirements → BDD Tests)            │  │
-│  └──────────────────────────────────────────────────────────────┘  │
-│           │                                                         │
-│           └─► Converts user stories to Given/When/Then tests       │
-│                                                                     │
-│  ┌──────────────────────────────────────────────────────────────┐  │
-│  │  AGENT 3: Test Executor (Run Tests + Self-Healing)          │  │
-│  └──────────────────────────────────────────────────────────────┘  │
-│           │                                                         │
-│           └─► Executes tests, heals broken locators                │
-│                                                                     │
-│  ┌──────────────────────────────────────────────────────────────┐  │
-│  │  AGENT 4: Test Analyst (Failure Analysis + Root Cause)      │  │
-│  └──────────────────────────────────────────────────────────────┘  │
-│           │                                                         │
-│           └─► Classifies failures, generates fix suggestions       │
-│                                                                     │
-│  ┌──────────────────────────────────────────────────────────────┐  │
-│  │  AGENT 5: Test Maintenance (AUT Change Detection)           │  │
-│  └──────────────────────────────────────────────────────────────┘  │
-│           │                                                         │
-│           └─► Updates tests when UI/API changes                    │
-│                                                                     │
-│  ┌──────────────────────────────────────────────────────────────┐  │
-│  │  AGENT 6: Coverage & Risk (Coverage Map + Verdict)          │  │
-│  └──────────────────────────────────────────────────────────────┘  │
-│           │                                                         │
-│           └─► Maps coverage, provides deployment verdict           │
-│                                                                     │
-├─────────────────────────────────────────────────────────────────────┤
-│                         AWS Services                                │
-├─────────────────────────────────────────────────────────────────────┤
-│  • Amazon Bedrock (Claude Sonnet 4)  — AI reasoning engine         │
-│  • Amazon S3                          — Test artifacts storage      │
-│  • Amazon DynamoDB                    — Metadata & learning data    │
-│  • AWS Lambda (optional)              — Serverless execution        │
-│  • AWS Step Functions (optional)      — Orchestration               │
-└─────────────────────────────────────────────────────────────────────┘
+┌────────────────────────┐        ┌──────────────────────────┐
+│  React + Vite frontend │──HTTP─▶│   FastAPI (api-server.py) │
+│  (Zustand, TS, Tailwind)│◀──────│   single container         │
+└────────────────────────┘        └────────────┬──────────────┘
+                                                │ invokes handlers
+                                                │ in-process, or
+                                                │ triggers Step Functions
+                    ┌───────────────────────────┼───────────────────────────┐
+                    │                           │                           │
+         ┌──────────▼─────────┐     ┌───────────▼──────────┐     ┌─────────▼─────────┐
+         │ AUT Analyzer        │     │ Test Executor          │     │ Coverage & Risk    │
+         │ Risk Scorer          │────▶│ (Playwright, real)     │────▶│ (verdict)          │
+         │ Strategy Generator   │     │ Test Analyst           │     │ Learning Updater   │
+         │ Test Author/Case Gen │     │ (failure triage)       │     │                    │
+         └──────────┬─────────┘     └───────────┬──────────┘     └─────────┬─────────┘
+                    │                           │                           │
+                    └───────────────┬───────────┴───────────────┬───────────┘
+                                    │                           │
+                         ┌──────────▼──────────┐     ┌──────────▼──────────┐
+                         │ Amazon Bedrock       │     │ S3 (artifacts) +     │
+                         │ (Claude, reasoning)  │     │ DynamoDB (state)     │
+                         └──────────────────────┘     └──────────────────────┘
 ```
 
----
+Each box under "AUT Analyzer / Risk Scorer / ..." is a standalone Lambda handler (`lambdas/*/handler.py`) sharing a common serializer layer. `orchestrator.py` calls them directly for local runs; `statemachine/test_cycle.asl.json` wires the same ARNs into a Step Functions definition for production.
 
-## The 6 Intelligent Agents
+## Tech Stack
 
-### 🧠 Agent 1: Test Strategist
-**Components:** AUT Analyzer, Risk Scorer, Strategy Generator
+**Backend:** Python 3.12, FastAPI, boto3, Pydantic v2, AWS Lambda, AWS Step Functions
+**Frontend:** React 19, TypeScript, Vite, Zustand, Tailwind CSS, Vitest
+**AI:** Amazon Bedrock (`us.anthropic.claude-sonnet-4-20250514-v1:0`)
+**Execution:** Playwright (real headless-browser test execution, `pip install -e ".[execution]"`)
+**Data:** Amazon S3 (artifacts, traces), DynamoDB (strategies, assignments, defect patterns, executions, idempotency), Athena (ad hoc querying)
+**Deploy:** Docker (multi-stage: Node build → Python runtime), AWS App Runner, ECR, CloudFront, CodeBuild
+**Observability:** Structured JSON logs + CloudWatch custom metrics + retry/idempotency, all via `aethertest/observability.py`
+**Testing:** pytest, hypothesis, moto (AWS mocking)
 
-- Maps application structure (components, dependencies, APIs, UI pages)
-- Computes risk scores based on change history and defect patterns
-- Generates prioritized test strategies (high/medium/low priority)
-- Allocates test coverage based on risk
-
-**Input:** AUT metadata (components, APIs, dependencies)  
-**Output:** Test strategy with prioritized component coverage
-
----
-
-### ✍️ Agent 2: Test Author
-**Converts business requirements to executable BDD test cases**
-
-- Understands plain text requirements and user stories
-- Supports "As a... I want... So that..." format
-- Generates Given/When/Then BDD test cases
-- Covers happy paths, edge cases, and negative scenarios
-
-**Input:** User stories, acceptance criteria  
-**Output:** BDD test cases in Given/When/Then format
-
----
-
-### ▶️ Agent 3: Test Executor
-**Executes tests with intelligent simulation and self-healing**
-
-- Simulates browser interactions for UI tests
-- Makes real HTTP calls for API tests (if endpoint provided)
-- Self-heals broken locators by finding semantically similar elements
-- Reports pass/fail with detailed evidence
-
-**Input:** Test cases  
-**Output:** Execution results with pass/fail status and evidence
-
----
-
-### 🔍 Agent 4: Test Analyst
-**Deep failure analysis with root cause hypotheses**
-
-- Classifies failures: `application_defect`, `test_data_issue`, `environment_instability`, `regression`
-- Correlates failures with recent code changes
-- Generates root cause hypotheses and fix suggestions
-- Reduces false positives by checking consistency across runs
-
-**Input:** Failed tests, recent changes, run history  
-**Output:** Failure classifications with root cause analysis
-
----
-
-### 🔧 Agent 5: Test Maintenance
-**Automatically updates tests when the application changes**
-
-- Detects UI element changes (button IDs, locators)
-- Detects API schema changes (endpoints, request/response formats)
-- Regenerates affected test steps using Claude
-- Retires obsolete tests when features are removed
-- Flags coverage gaps for new features
-
-**Input:** AUT changes, existing test suite  
-**Output:** Updated test suite with maintenance report
-
----
-
-### 📊 Agent 6: Coverage & Risk
-**Maps test coverage and provides deployment verdicts**
-
-- Computes per-component test coverage
-- Identifies undertested critical paths
-- Generates coverage quality scores
-- Provides deployment verdict: `safe_to_deploy`, `deploy_with_caution`, `do_not_deploy`
-- Recommends actions to improve coverage
-
-**Input:** Test results, AUT graph, risk scores  
-**Output:** Coverage report with deployment verdict
-
----
-
-## AWS Services Used
-
-### Amazon Bedrock
-- **Model:** `us.anthropic.claude-sonnet-4-20250514-v1:0`
-- **Usage:** All AI reasoning (test generation, failure analysis, maintenance)
-- **Region:** us-east-1
-
-### Amazon S3
-- **Bucket:** `aethertest-artifacts-654654478821`
-- **Contents:**
-  - `{tenant_id}/aut-graphs/` — AUT component graphs
-  - `{tenant_id}/strategies/` — Test strategies
-  - `{tenant_id}/test-cases/` — Generated test cases
-  - `{tenant_id}/authored-tests/` — BDD tests from requirements
-  - `{tenant_id}/executor-results/` — Test execution results
-  - `{tenant_id}/analysis/` — Failure analysis reports
-  - `{tenant_id}/coverage/` — Coverage reports
-  - `{tenant_id}/maintenance/` — Maintenance reports
-
-### Amazon DynamoDB
-- **Tables:**
-  - `aethertest-strategies` — Test strategies and metadata
-  - `aethertest-agent-assignments` — Agent execution tracking
-  - `aethertest-defect-patterns` — Historical defect data (90-day TTL)
-  - `aethertest-executions` — Execution state tracking
-
----
-
-## Quick Start
-
-### Prerequisites
-- Python 3.9+
-- AWS CLI configured with profile `kiro-dev`
-- Access to Amazon Bedrock (Claude Sonnet 4 enabled)
-- AWS Account: `654654478821`
-- Region: `us-east-1`
-
-### Installation
+## Installation
 
 ```bash
-# Clone the repository
-cd /Users/ra20481785/multiagent_data_testing
+git clone <repository-url>
+cd AetherTest
 
-# Install dependencies
-pip install boto3 pydantic streamlit requests
+# Backend
+pip install -e .
+pip install -e ".[test,dev]"        # optional: pytest, ruff, black
+pip install -e ".[execution]"       # optional: Playwright, for real browser test execution
+playwright install chromium         # only needed if you installed the execution extra
 
-# Verify Bedrock connection
-AWS_PROFILE=kiro-dev python3 verify_bedrock.py
+# Frontend
+cd frontend
+npm install
 ```
 
----
+## Configuration
 
-## Running the Demo
-
-### Option 1: Quick 2-Minute Demo (Recommended)
+AWS credentials are required (Bedrock, S3, DynamoDB, Step Functions, Athena). Locally this project uses an AWS SSO profile; in App Runner it uses the instance role. No AWS account ID or profile name is hardcoded anywhere in the codebase — set these in your own environment.
 
 ```bash
-AWS_PROFILE=kiro-dev python3 demo.py
+aws configure sso --profile <your-profile>
+aws sso login --profile <your-profile>
 ```
 
-**What it does:**
-- Uses a pre-built e-commerce checkout flow AUT
-- Runs all 6 agents in sequence
-- Limits to 3 tests per component (fast mode)
-- Shows colored terminal output
-- Completes in ~2 minutes
+All configuration is centralized in `aethertest/config.py`; every handler and script imports from there instead of hardcoding a default. Key environment variables it reads (see also `frontend/.env.example` and `deploy/config.sh`):
 
-**Expected output:**
-```
-╔══════════════════════════════════════════════════════════════╗
-║          AetherTest — AI-Powered Multi-Agent Testing         ║
-║              E-Commerce Checkout Flow Demo                   ║
-╚══════════════════════════════════════════════════════════════╝
+| Variable | Default | Purpose |
+|---|---|---|
+| `AWS_PROFILE` | — | Local SSO profile (must be empty/unset in containers) |
+| `AWS_DEFAULT_REGION` | `us-east-1` | AWS region |
+| `BEDROCK_MODEL_ID` | `us.anthropic.claude-sonnet-4-20250514-v1:0` | Claude model used by every agent |
+| `AETHERTEST_BUCKET` | `aethertest-artifacts` | S3 bucket for artifacts and Playwright traces |
+| `STRATEGIES_TABLE` / `ASSIGNMENTS_TABLE` / `DEFECT_PATTERNS_TABLE` / `EXECUTIONS_TABLE` / `IDEMPOTENCY_TABLE` | `aethertest-*` | DynamoDB table names |
+| `ATHENA_DATABASE` / `ATHENA_OUTPUT_BUCKET` | — | Athena query target and results bucket |
+| `AETHERTEST_NO_SSL_VERIFY` | unset | Disable TLS verification behind corporate proxies |
 
-[1/7] AUT Analyzer
-  ✓ Mapped 4 components
-
-[2/7] Risk Scorer
-  ✓ Scored 4 components | 2 high-priority
-
-[3/7] Strategy Generator
-  ✓ Strategy created | Est. 180s
-
-[4/7] Test Author Agent
-  ✓ Authored 6 BDD test cases from 2 requirements
-
-[5/7] Test Case Generator
-  ✓ Generated 12 test cases + 6 BDD tests
-
-[6/7] Test Executor Agent
-  ✓ Executed 18 tests | Passed: 15 | Failed: 3 | Pass Rate: 83.3%
-
-[7/7] Test Analyst Agent
-  ✓ Analyzed failures | Real defects: 2 | False positives: 1
-
-═══════════════════════════════════════════════════════════════
-  AETHERTEST DEMO COMPLETE
-═══════════════════════════════════════════════════════════════
-
-  Deployment Verdict:  🟡  DEPLOY WITH CAUTION
-
-  Pass Rate:    83.3%
-  Coverage:     100%
-  Tests Run:    18
-  Failures:     3
-  Demo Time:    127.3s
-```
-
----
-
-### Option 2: Full Orchestrator (All Steps)
+`setup_aws.py` only writes local AWS credentials to `~/.aws/credentials` and verifies Bedrock connectivity — it does **not** provision infrastructure. Before first use, create the S3 bucket and the five DynamoDB tables (`aethertest-strategies`, `aethertest-agent-assignments`, `aethertest-defect-patterns`, `aethertest-executions`, `aethertest-idempotency`) yourself, e.g. via the AWS Console or CLI. See [Future Improvements](#future-improvements) — this is exactly the kind of manual step Terraform/CDK should own.
 
 ```bash
-AWS_PROFILE=kiro-dev python3 orchestrator.py
+python setup_aws.py    # writes ~/.aws/credentials, checks Bedrock access
 ```
 
-**What it does:**
-- Runs the complete 9-step pipeline
-- Includes learning update and defect pattern storage
-- Saves full results to JSON file
-- Takes ~3-5 minutes
-
-**Fast mode:**
-```bash
-AWS_PROFILE=kiro-dev python3 orchestrator.py --fast
-```
-
-**Custom AUT:**
-```bash
-AWS_PROFILE=kiro-dev python3 orchestrator.py --aut-file my_aut.json
-```
-
----
-
-### Option 3: Streamlit Web UI
+## Running locally
 
 ```bash
-AWS_PROFILE=kiro-dev streamlit run ui/app.py
+# Verify Bedrock connectivity
+AWS_PROFILE=aethertest python verify_bedrock.py
+
+# Backend API (FastAPI, serves the built frontend too)
+AWS_PROFILE=aethertest python frontend/api-server.py    # http://localhost:8001
+
+# Frontend dev server (separate terminal, hot reload against the API)
+cd frontend && npm run dev                                # http://localhost:5173
 ```
 
-**Features:**
-- 🏠 Dashboard — Platform overview
-- ▶️ Run Demo — Trigger pipeline runs
-- 📋 Test Cases — Browse generated tests
-- 📊 Test Results — View execution results
-- 📈 Coverage Report — Coverage map and verdicts
-- 🤖 Agent Activity — See what each agent did
-
-**Access:** http://localhost:8501
-
----
-
-## Viewing Results in AWS
-
-### S3 Bucket
-```bash
-aws s3 ls s3://aethertest-artifacts-654654478821/demo-ecommerce/ --recursive --profile kiro-dev
-```
-
-### DynamoDB Tables
-```bash
-# View strategies
-aws dynamodb query \
-  --table-name aethertest-strategies \
-  --key-condition-expression "PK = :pk" \
-  --expression-attribute-values '{":pk":{"S":"TENANT#demo-ecommerce"}}' \
-  --profile kiro-dev
-
-# View defect patterns
-aws dynamodb query \
-  --table-name aethertest-defect-patterns \
-  --key-condition-expression "PK = :pk" \
-  --expression-attribute-values '{":pk":{"S":"TENANT#demo-ecommerce"}}' \
-  --profile kiro-dev
-```
-
-### Bedrock Model Access
-```bash
-aws bedrock list-foundation-models \
-  --region us-east-1 \
-  --profile kiro-dev \
-  --query 'modelSummaries[?contains(modelId, `claude`)]'
-```
-
----
-
-## Testing Guide
-
-### Step-by-Step Testing
-
-1. **Verify AWS Access**
-   ```bash
-   aws sts get-caller-identity --profile kiro-dev
-   ```
-
-2. **Verify Bedrock Access**
-   ```bash
-   AWS_PROFILE=kiro-dev python3 verify_bedrock.py
-   ```
-
-3. **Run Quick Demo**
-   ```bash
-   AWS_PROFILE=kiro-dev python3 demo.py
-   ```
-
-4. **Check S3 for Results**
-   ```bash
-   aws s3 ls s3://aethertest-artifacts-654654478821/demo-ecommerce/ --recursive --profile kiro-dev
-   ```
-
-5. **Launch Web UI**
-   ```bash
-   AWS_PROFILE=kiro-dev streamlit run ui/app.py
-   ```
-
-6. **Run Full Orchestrator**
-   ```bash
-   AWS_PROFILE=kiro-dev python3 orchestrator.py --fast
-   ```
-
----
-
-## Expected Outputs
-
-### Demo Output
-- **Duration:** ~2 minutes
-- **Tests Run:** 15-20 (3 per component in fast mode)
-- **Pass Rate:** 80-90% (with simulated failures)
-- **Deployment Verdict:** Usually "deploy_with_caution" (realistic demo)
-
-### Orchestrator Output
-- **Duration:** ~3-5 minutes
-- **Tests Run:** 30-50 (full coverage)
-- **Pass Rate:** 85-95%
-- **Files Created:**
-  - `pipeline_results_{execution_id}.json` — Full pipeline results
-  - S3 artifacts in `s3://aethertest-artifacts-654654478821/`
-  - DynamoDB records in all 4 tables
-
-### Streamlit UI
-- **Pages:** 6 interactive pages
-- **Data Source:** Real S3 and DynamoDB data
-- **Refresh:** Re-run queries to see latest results
-
----
-
-## Showcasing to Others
-
-### 1. Live Demo Script
+CLI-only runs, no server needed:
 
 ```bash
-# Terminal 1: Run the demo
-AWS_PROFILE=kiro-dev python3 demo.py
-
-# Terminal 2: Launch the UI
-AWS_PROFILE=kiro-dev streamlit run ui/app.py
-
-# Terminal 3: Show AWS resources
-aws s3 ls s3://aethertest-artifacts-654654478821/demo-ecommerce/ --recursive --profile kiro-dev
+AWS_PROFILE=aethertest python demo.py                      # ~2 min, canned e-commerce AUT
+AWS_PROFILE=aethertest python orchestrator.py --fast       # full 9-step pipeline
 ```
 
-### 2. Key Talking Points
+## Example usage
 
-- **6 AI agents** working together, each with a specialized role
-- **Claude Sonnet 4** powers all reasoning and generation
-- **AWS-native** — uses Bedrock, S3, DynamoDB (no external dependencies)
-- **Self-healing tests** — automatically fixes broken locators
-- **BDD from requirements** — converts user stories to Given/When/Then
-- **Root cause analysis** — not just "test failed" but "why it failed"
-- **Deployment verdicts** — safe_to_deploy, deploy_with_caution, do_not_deploy
-- **Closed-loop learning** — learns from past failures to improve future runs
+Run the full pipeline against a custom application description:
 
-### 3. Demo Flow
-
-1. **Show the architecture** — 6 agents, AWS services
-2. **Run `demo.py`** — watch colored output, explain each agent
-3. **Open Streamlit UI** — browse test cases, results, coverage
-4. **Show S3 bucket** — real artifacts stored in AWS
-5. **Show DynamoDB** — metadata and learning data
-6. **Explain the verdict** — how coverage + pass rate = deployment decision
-
----
-
-## File Structure
-
-```
-aethertest/
-├── aethertest/
-│   ├── __init__.py
-│   └── bedrock_client.py          ← Bedrock connection module
-├── layers/
-│   └── serializer/
-│       ├── models.py               ← Pydantic data models
-│       ├── serializer.py           ← JSON serialization
-│       └── markdown.py             ← Markdown formatting
-├── lambdas/
-│   ├── aut_analyzer/handler.py    ← AUT structure analysis
-│   ├── risk_scorer/handler.py     ← Risk score computation
-│   ├── strategy_generator/handler.py ← Test strategy generation
-│   ├── test_case_generator/handler.py ← Claude test generation
-│   ├── test_author_agent/handler.py   ← Requirements → BDD tests
-│   ├── test_executor_agent/handler.py ← Test execution + self-healing
-│   ├── test_analyst_agent/handler.py  ← Failure analysis
-│   ├── test_maintenance_agent/handler.py ← Test maintenance
-│   ├── coverage_risk_agent/handler.py    ← Coverage + verdict
-│   ├── agent_dispatcher/handler.py       ← Agent dispatch
-│   ├── failure_triage/handler.py         ← Failure classification
-│   ├── learning_updater/handler.py       ← Closed-loop learning
-│   └── result_aggregator/handler.py      ← Result aggregation
-├── ui/
-│   ├── app.py                     ← Streamlit web UI
-│   └── requirements.txt           ← UI dependencies
-├── orchestrator.py                ← Master pipeline runner
-├── demo.py                        ← Quick 2-minute demo
-├── verify_bedrock.py              ← Bedrock connection test
-├── setup_aws.py                   ← AWS resource setup
-└── README.md                      ← This file
-```
-
----
-
-## Troubleshooting
-
-### Issue: "Access denied to Bedrock model"
-**Solution:**
 ```bash
-# Check IAM permissions
-aws iam get-user --profile kiro-dev
-
-# Verify model access in Bedrock console
-# https://console.aws.amazon.com/bedrock/home?region=us-east-1#/modelaccess
+AWS_PROFILE=aethertest python orchestrator.py --aut-file my_aut.json
 ```
-
-### Issue: "S3 bucket not found"
-**Solution:**
-```bash
-# Verify bucket exists
-aws s3 ls s3://aethertest-artifacts-654654478821 --profile kiro-dev
-
-# If missing, run setup
-AWS_PROFILE=kiro-dev python3 setup_aws.py
-```
-
-### Issue: "DynamoDB table not found"
-**Solution:**
-```bash
-# List tables
-aws dynamodb list-tables --profile kiro-dev
-
-# If missing, run setup
-AWS_PROFILE=kiro-dev python3 setup_aws.py
-```
-
-### Issue: "Claude response parsing error"
-**Solution:**
-- Claude occasionally returns malformed JSON
-- All agents have fallback logic for this case
-- Check CloudWatch logs for details
-
-### Issue: "Streamlit won't start"
-**Solution:**
-```bash
-# Install dependencies
-pip install streamlit boto3 pydantic
-
-# Check port 8501 is available
-lsof -i :8501
-
-# Run with explicit port
-streamlit run ui/app.py --server.port 8502
-```
-
----
-
-## Advanced Usage
-
-### Custom AUT Configuration
-
-Create a JSON file with your AUT structure:
-
-```json
-{
-  "tenant_id": "my-company",
-  "aut_id": "my-app",
-  "aut_version": "1.0.0",
-  "aut_metadata": {
-    "components": [
-      {
-        "component_id": "user-service",
-        "name": "User Service",
-        "component_type": "api_endpoint",
-        "dependencies": [],
-        "api_surface": ["/api/users", "/api/users/{id}"],
-        "ui_entry_points": [],
-        "metadata": {"criticality": "high"}
-      }
-    ]
-  }
-}
-```
-
-Run with:
-```bash
-AWS_PROFILE=kiro-dev python3 orchestrator.py --aut-file my_aut.json
-```
-
-### Custom Requirements
-
-Create a requirements list:
-
-```python
-requirements = [
-    {
-        "id": "REQ-001",
-        "type": "user_story",
-        "content": "As a user, I want to log in with my email so that I can access my account",
-        "component": "User Service",
-    }
-]
-```
-
-### Programmatic Usage
 
 ```python
 from orchestrator import run_pipeline
 
 results = run_pipeline(aut_config=my_aut, fast_mode=True)
 print(results["final_verdict"])
+# {"deployment_verdict": "deploy_with_caution", "pass_rate": 83.3, "coverage_pct": 100, ...}
 ```
 
----
+Authoring BDD tests from a user story (same call the API server makes):
 
-## Performance
+```python
+requirements = [{
+    "id": "REQ-001",
+    "type": "user_story",
+    "content": "As a user, I want to reset my password via email so I can recover my account",
+    "component": "Login Service",
+}]
+```
 
-- **Demo mode:** ~2 minutes (3 tests/component)
-- **Fast mode:** ~3-5 minutes (5 tests/component)
-- **Full mode:** ~10-15 minutes (8 tests/component)
+## Project Structure
 
-**Bottlenecks:**
-- Claude API calls (1-3s per call)
-- S3 uploads (minimal)
-- DynamoDB writes (minimal)
+```
+aethertest/            config.py (single source of truth for bucket/table/region config),
+                       observability.py (structured logging + metrics + retry + idempotency,
+                       applied to every handler), bedrock_client.py, aws_clients.py
+layers/serializer/    Pydantic models, JSON serializer, markdown formatter — the shared
+                       data contract between agents (deployed as a Lambda layer in prod)
+lambdas/               One directory per agent capability, each a standalone Lambda handler:
+                       aut_analyzer, risk_scorer, strategy_generator, test_case_generator,
+                       test_author_agent, test_executor_agent (+ playwright_runner.py for
+                       real browser execution), test_analyst_agent, coverage_risk_agent,
+                       learning_updater, agent_dispatcher, failure_triage, result_aggregator
+statemachine/          Step Functions ASL definition (test_cycle.asl.json) wiring the
+                       Lambda handlers into the production orchestration graph
+frontend/              React/Vite/TypeScript SPA + api-server.py (FastAPI backend that
+                       invokes the Lambda handlers in-process and proxies Step
+                       Functions/Athena calls); built together into one container
+deploy/                Shell scripts + CodeBuild specs for App Runner, ECR, CloudFront
+tests/                 End-to-end and full-agent integration tests (pytest)
+orchestrator.py         Local/demo pipeline runner — chains all agent handlers in sequence
+demo.py                 Fast, narrated 2-minute demo against a canned e-commerce AUT
+setup_aws.py            Provisions the S3 bucket and DynamoDB tables
+verify_bedrock.py       Standalone Bedrock connectivity/model-access check
+```
 
-**Optimization:**
-- Use fast mode for demos
-- Batch Claude calls where possible
-- Cache AUT graphs and strategies
+## Design Decisions
 
----
+- **Handlers as the unit of reuse, not a framework.** Every agent is a plain `handler(event, context)` function with no Lambda-specific dependencies. That's why the same code runs three ways — imported directly by `orchestrator.py`, imported directly by `api-server.py`, or deployed as an actual Lambda behind Step Functions — without a shim layer.
+- **Cross-cutting reliability via one decorator, not copy-pasted into every handler.** `@instrument_handler("<agent_name>")` (in `aethertest/observability.py`) wraps every agent's `handler()` and adds structured JSON logging, CloudWatch metrics, retry-with-backoff on transient AWS errors, and idempotent replay keyed on `execution_id` — all in one place instead of thirteen near-identical copies.
+- **Real execution first, LLM simulation as an explicit fallback.** The Test Executor's primary path is Planner → Claude generates a Playwright script → the script runs in a real headless browser → the trace is uploaded to S3. It only falls back to LLM-simulated pass/fail — and every such result is tagged `execution_mode: "llm_simulated"` so it's never silently mistaken for a real result — when Playwright isn't installed or no target URL was supplied.
+- **Step Functions for production orchestration, Python script for everything else.** The ASL state machine gives retries, catch blocks, and visual execution history for free once this runs unattended; the plain-Python orchestrator is faster to iterate on and is what demos/tests actually exercise.
+- **DynamoDB single-table-per-concern, not one megatable.** Strategies, assignments, defect patterns, execution state, and idempotency records are separate tables because their access patterns and TTL/retention needs (defect patterns expire in 90 days; idempotency records in 7; execution state doesn't) differ enough that sharing a table would mean fighting the partition key design.
+- **S3 as the artifact system of record, DynamoDB as the index.** Large agent outputs (test suites, coverage reports, Playwright traces) go to S3 under a `{tenant_id}/...` prefix; DynamoDB only stores what's needed to look them up and drive verdicts, keeping table items small and cheap to scan.
+- **One container, two build stages.** The Dockerfile builds the React app in a Node stage and copies only the static output into the Python runtime stage, so the deployed image has no Node/npm surface area and one process (`uvicorn`) serves both the API and the SPA.
 
-## Future Enhancements
+## Challenges
 
-- [ ] Real browser automation (Selenium/Playwright integration)
-- [ ] Real API testing (actual HTTP calls)
-- [ ] Visual regression testing (screenshot comparison)
-- [ ] Performance testing (load/stress tests)
-- [ ] Security testing (OWASP Top 10)
-- [ ] CI/CD integration (GitHub Actions, GitLab CI)
-- [ ] Slack/Teams notifications
-- [ ] Multi-tenant isolation
-- [ ] Cost tracking and optimization
-- [ ] A/B testing for test strategies
+- **Non-deterministic LLM output inside a pipeline.** Claude occasionally returns malformed JSON where structured output is required (test cases, risk scores); every handler needs fallback/repair logic rather than trusting the model's output shape. The same is true one level up for Playwright script generation — a bad script fails the subprocess run rather than corrupting the pipeline, and that failure is reported as a normal test failure, not swallowed.
+- **At-least-once Lambda/Step Functions delivery vs. side effects.** A retried Step Functions task or a re-invoked Lambda would otherwise double-write S3 artifacts and DynamoDB records. `instrument_handler`'s idempotency cache (keyed on `execution_id` + agent name) makes retries safe to replay instead of re-running side effects.
+- **Docs drift.** A previous version of this README and a since-removed `DOCUMENTATION.md` described a Streamlit UI that was never the shipped frontend (the actual frontend is a React/TypeScript SPA behind FastAPI). The fix was deleting the stale doc rather than trying to keep two documents in sync — this README is now the only one.
 
----
+## Future Improvements
 
-## Support
+- Real HTTP test execution against live endpoints for API-type test cases (today only UI/browser tests get the real Playwright path; API tests still go through LLM simulation)
+- Infrastructure as code (Terraform/CDK) instead of hand-run shell scripts in `deploy/` — today S3/DynamoDB provisioning isn't automated at all; `setup_aws.py` only writes local credentials
+- CI/CD pipeline: lint + test + plan on PR, auto-deploy to a dev environment on merge
+- X-Ray tracing and per-agent latency/error dashboards on top of the CloudWatch metrics `instrument_handler` already emits
+- Multi-tenant isolation and auth on the FastAPI/React app (currently none)
 
-For issues or questions:
-- Check the troubleshooting section above
-- Review CloudWatch logs for Lambda errors
-- Check S3 and DynamoDB for data consistency
-- Verify Bedrock model access in AWS Console
+## Screenshots
 
----
+_Not yet captured — placeholders below._
 
-## License
+| Dashboard | Test Results | Coverage & Verdict |
+|---|---|---|
+| _screenshot pending_ | _screenshot pending_ | _screenshot pending_ |
 
-Proprietary — Internal use only
+## Resume Bullet Points
 
----
-
-## Credits
-
-Built with:
-- **Amazon Bedrock** — Claude Sonnet 4 AI reasoning
-- **AWS Lambda** — Serverless compute
-- **Amazon S3** — Artifact storage
-- **Amazon DynamoDB** — Metadata and learning data
-- **Streamlit** — Web UI framework
-- **Pydantic** — Data validation
-- **Boto3** — AWS SDK for Python
-
----
-
-**AetherTest** — Intelligent testing, powered by AI  
+- Designed and implemented a 6-stage LLM-agent pipeline (Amazon Bedrock/Claude) with shared handler contracts that run identically in-process, as AWS Lambda functions, and as Step Functions tasks — eliminating a separate "production" code path.
+- Built a real test-execution pipeline where Claude generates a Playwright script per test case and it runs in a real headless browser with trace capture, falling back to explicitly-tagged LLM simulation only when no real target is available — not an LLM guessing pass/fail as the platform's core signal.
+- Built a single cross-cutting decorator (structured logging, CloudWatch metrics, retry-with-backoff, execution_id-keyed idempotency) applied to every agent Lambda, replacing what would otherwise be reliability boilerplate copy-pasted into thirteen handlers.
+- Built a dual-mode orchestration layer (local Python runner for fast iteration, Step Functions state machine with retry/catch semantics for production) sharing the same Lambda handlers, cutting agent development cycle time while keeping production fault tolerance.
+- Shipped a multi-stage Docker build that compiles a React/TypeScript SPA and serves it from a single FastAPI/uvicorn process behind AWS App Runner, reducing deployed surface area to one container with no Node runtime in production.

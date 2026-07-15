@@ -1,8 +1,9 @@
 """
 Test Executor Agent (Agent 3)
-Executes test cases using Claude to simulate browser/API interactions.
-Handles UI tests (simulated) and API tests (real HTTP if endpoint provided).
-Reports pass/fail with evidence. Self-heals broken locators semantically.
+Real execution pipeline: Planner -> Generate Playwright script (Claude) -> run it
+in a headless browser -> collect trace -> report pass/fail with evidence.
+Falls back to Claude-simulated execution (result tagged execution_mode="llm_simulated")
+only when Playwright isn't installed in the runtime or no target URL was supplied.
 Stores results in S3.
 """
 
@@ -23,9 +24,13 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), "../../"))
 s3 = boto3.client("s3", region_name=os.environ.get("AWS_DEFAULT_REGION", "us-east-1"), verify=not os.environ.get("AETHERTEST_NO_SSL_VERIFY", ""), endpoint_url=os.environ.get("S3_ENDPOINT_URL", "https://s3.us-east-1.amazonaws.com"))
 dynamodb = boto3.resource("dynamodb", region_name=os.environ.get("AWS_DEFAULT_REGION", "us-east-1"), verify=not os.environ.get("AETHERTEST_NO_SSL_VERIFY", ""))
 
-BUCKET_NAME = os.environ.get("AETHERTEST_BUCKET", "aethertest-artifacts-654654478821")
-ASSIGNMENTS_TABLE = os.environ.get("ASSIGNMENTS_TABLE", "aethertest-agent-assignments")
-MODEL_ID = os.environ.get("BEDROCK_MODEL_ID", "us.anthropic.claude-sonnet-4-20250514-v1:0")
+from aethertest.config import (
+    ARTIFACTS_BUCKET as BUCKET_NAME,
+    ASSIGNMENTS_TABLE,
+    BEDROCK_MODEL_ID as MODEL_ID,
+)
+from aethertest.observability import instrument_handler, log_event, retry_call
+from lambdas.test_executor_agent.playwright_runner import execute_real
 
 EXECUTOR_SYSTEM_PROMPT = """You are an intelligent test execution engine for the AetherTest platform.
 Simulate executing test cases against a web application or API.
@@ -61,6 +66,7 @@ Rules:
 - If a locator fails, attempt self-healing by finding semantically similar elements"""
 
 
+@instrument_handler("test_executor_agent")
 def handler(event: dict, context) -> dict:
     """
     Lambda handler for Test Executor Agent.
@@ -138,6 +144,7 @@ def handler(event: dict, context) -> dict:
             "skipped": skipped,
             "pass_rate": round(passed / len(test_cases) * 100, 1) if test_cases else 0,
             "self_healed": sum(1 for r in results if r.get("self_healed")),
+            "real_execution": sum(1 for r in results if r.get("execution_mode") == "playwright_real"),
         },
         "results": results,
         "failed_tests": [r for r in results if r["status"] == "failed"],
@@ -178,7 +185,27 @@ def handler(event: dict, context) -> dict:
 
 
 def _execute_test(test_case: dict, force_fail: bool = False, api_base_url: str = "") -> dict:
-    """Use Claude to simulate test execution with optional self-healing."""
+    """
+    Real execution first: if Playwright is installed and a target URL was supplied,
+    generate and run a real Playwright script (see playwright_runner.execute_real) and
+    return that result. Falls back to Claude-simulated execution — tagged
+    execution_mode="llm_simulated" — when Playwright is unavailable, no target URL was
+    given, or the real pipeline itself errors out.
+
+    force_fail is a demo/test-fixture knob (used to guarantee a failure to exercise the
+    triage agent) and only applies to the simulated path — a real browser can't be told
+    to fail on demand.
+    """
+    if api_base_url and not force_fail:
+        real_result = execute_real(test_case, api_base_url)
+        if real_result is not None:
+            return real_result
+
+    return _execute_test_simulated(test_case, force_fail=force_fail, api_base_url=api_base_url)
+
+
+def _execute_test_simulated(test_case: dict, force_fail: bool = False, api_base_url: str = "") -> dict:
+    """LLM-simulated execution — the fallback path, not the primary one. See _execute_test."""
     try:
         bedrock = boto3.client("bedrock-runtime", region_name=os.environ.get("AWS_DEFAULT_REGION", "us-east-1"), verify=not os.environ.get("AETHERTEST_NO_SSL_VERIFY", ""))
 
@@ -231,6 +258,7 @@ Return ONLY a valid JSON object."""
         exec_result["test_id"] = test_case.get("test_id", str(uuid.uuid4()))
         exec_result["test_name"] = test_case.get("test_name", "")
         exec_result["component"] = test_case.get("component", test_case.get("component_id", ""))
+        exec_result["execution_mode"] = "llm_simulated"
         return exec_result
 
     except Exception as e:
@@ -250,4 +278,5 @@ Return ONLY a valid JSON object."""
             "self_heal_detail": None,
             "evidence": {},
             "assertions": [],
+            "execution_mode": "llm_simulated",
         }
